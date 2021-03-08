@@ -13,9 +13,10 @@ package eslgo
 import (
 	"context"
 	"fmt"
-	"github.com/percipia/eslgo/command"
 	"log"
 	"net"
+
+	"github.com/AkronimBlack/eslgo/command"
 )
 
 func Dial(address, password string, onDisconnect func()) (*Conn, error) {
@@ -23,7 +24,7 @@ func Dial(address, password string, onDisconnect func()) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	connection := newConnection(c, false)
+	connection := NewConnection(c, false)
 
 	// First auth
 	<-connection.responseChannels[TypeAuthRequest]

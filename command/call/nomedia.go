@@ -11,8 +11,9 @@
 package call
 
 import (
-	"github.com/percipia/eslgo/command"
 	"net/textproto"
+
+	"github.com/AkronimBlack/eslgo/command"
 )
 
 type NoMedia struct {

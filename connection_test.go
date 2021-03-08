@@ -13,17 +13,18 @@ package eslgo
 import (
 	"bufio"
 	"context"
-	"github.com/percipia/eslgo/command"
-	"github.com/stretchr/testify/assert"
 	"net"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/AkronimBlack/eslgo/command"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConn_SendCommand(t *testing.T) {
 	server, client := net.Pipe()
-	connection := newConnection(client, false)
+	connection := NewConnection(client, false)
 	defer connection.Close()
 	defer server.Close()
 	defer client.Close()

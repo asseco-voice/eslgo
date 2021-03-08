@@ -14,10 +14,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/percipia/eslgo/command"
-	"github.com/percipia/eslgo/command/call"
 	"io"
 	"log"
+
+	"github.com/AkronimBlack/eslgo/command"
+	"github.com/AkronimBlack/eslgo/command/call"
 )
 
 func (c *Conn) EnableEvents(ctx context.Context) error {

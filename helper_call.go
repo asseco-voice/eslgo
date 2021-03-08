@@ -14,9 +14,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/percipia/eslgo/command"
-	"github.com/percipia/eslgo/command/call"
 	"strings"
+
+	"github.com/AkronimBlack/eslgo/command"
+	"github.com/AkronimBlack/eslgo/command/call"
 )
 
 // Leg This struct is used to specify the individual legs of a call for the originate helpers

@@ -14,15 +14,17 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"github.com/google/uuid"
-	"github.com/percipia/eslgo/command"
 	"log"
 	"net"
 	"net/textproto"
 	"sync"
 	"time"
+
+	"github.com/AkronimBlack/eslgo/command"
+	"github.com/google/uuid"
 )
 
+/*Conn ...*/
 type Conn struct {
 	conn              net.Conn
 	reader            *bufio.Reader
@@ -40,7 +42,8 @@ type Conn struct {
 
 const EndOfMessage = "\r\n\r\n"
 
-func newConnection(c net.Conn, outbound bool) *Conn {
+//NewConnection exported constructor for alterative builds
+func NewConnection(c net.Conn, outbound bool) *Conn {
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)
 
@@ -69,6 +72,7 @@ func newConnection(c net.Conn, outbound bool) *Conn {
 	return instance
 }
 
+/*RegisterEventListener ... */
 func (c *Conn) RegisterEventListener(channelUUID string, listener EventListener) string {
 	c.eventListenerLock.Lock()
 	defer c.eventListenerLock.Unlock()
@@ -82,6 +86,7 @@ func (c *Conn) RegisterEventListener(channelUUID string, listener EventListener)
 	return id
 }
 
+/*RemoveEventListener .. */
 func (c *Conn) RemoveEventListener(channelUUID string, id string) {
 	c.eventListenerLock.Lock()
 	defer c.eventListenerLock.Unlock()

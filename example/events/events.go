@@ -14,9 +14,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/percipia/eslgo"
 	"os"
 	"time"
+
+	"github.com/AkronimBlack/eslgo"
 )
 
 func main() {
