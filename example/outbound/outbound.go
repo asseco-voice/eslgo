@@ -20,7 +20,7 @@ import (
 
 func main() {
 	// Start listening, this is a blocking function
-	log.Fatalln(eslgo.ListenAndServe(":8084", handleConnection))
+	log.Fatalln(eslgo.ListenAndServe(":8084", handleConnection, nil))
 }
 
 func handleConnection(ctx context.Context, conn *eslgo.Conn, response *eslgo.RawResponse) {

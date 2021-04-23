@@ -15,12 +15,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"github.com/AkronimBlack/eslgo/command"
 )
 
-func Dial(address, password string, onDisconnect func()) (*Conn, error) {
-	c, err := net.Dial("tcp", address)
+func Dial(address, password string, timeout time.Duration, onDisconnect func()) (*Conn, error) {
+	c, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return nil, err
 	}

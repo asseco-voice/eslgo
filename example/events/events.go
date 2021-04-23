@@ -22,7 +22,7 @@ import (
 
 func main() {
 	// Connect to FreeSWITCH
-	conn, err := eslgo.Dial("127.0.0.1:8021", "ClueCon", func() {
+	conn, err := eslgo.Dial("127.0.0.1:8021", "ClueCon", 2*time.Second, func() {
 		fmt.Println("Inbound Connection Disconnected")
 	})
 	if err != nil {
