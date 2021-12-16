@@ -24,6 +24,8 @@ const (
 	udp  = "udp"
 	udp4 = "udp4"
 	udp6 = "udp6"
+
+	ClosedConnection = "use of closed network connection"
 )
 
 type OutboundHandler func(ctx context.Context, conn *Conn, connectResponse *RawResponse)
@@ -102,6 +104,7 @@ func listenerLoop(listener net.Listener, ctx context.Context, ch chan net.Conn, 
 		if err != nil {
 			logger.Errorf("failed accepting connection with error %s", err.Error())
 			cancel()
+			return
 		}
 		ch <- c
 	}
