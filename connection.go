@@ -258,7 +258,7 @@ func (c *Conn) readLoop() {
 	for c.runningContext.Err() == nil {
 		err := c.doMessage()
 		if err != nil {
-			c.logger.Debugf("Error receiving message", err)
+			c.logger.Debugf("Error receiving message %s", err.Error())
 			break
 		}
 	}

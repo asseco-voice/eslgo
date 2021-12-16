@@ -13,7 +13,6 @@ package eslgo
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"time"
 
@@ -36,11 +35,16 @@ func Dial(opts *DialOpts, ctx context.Context) (*Conn, error) {
 		ctx = context.Background()
 	}
 
+	logger := opts.logger
+	if logger == nil {
+		logger = NewLogger()
+	}
+
 	c, err := net.DialTimeout("tcp", opts.address, opts.timeout)
 	if err != nil {
 		return nil, err
 	}
-	connection := NewConnection(c, false, ctx, opts.logger)
+	connection := NewConnection(c, false, ctx, logger)
 
 	// First auth
 	<-connection.responseChannels[TypeAuthRequest]
@@ -53,7 +57,7 @@ func Dial(opts *DialOpts, ctx context.Context) (*Conn, error) {
 		}
 		return nil, err
 	} else {
-		log.Printf("Sucessfully authenticated %s\n", connection.conn.RemoteAddr())
+		logger.Debugf("Successfully authenticated %s", connection.conn.RemoteAddr())
 	}
 
 	// Inbound only handlers
@@ -82,12 +86,12 @@ func (c *Conn) authLoop(auth command.Auth) {
 		case <-c.responseChannels[TypeAuthRequest]:
 			err := c.doAuth(c.runningContext, auth)
 			if err != nil {
-				log.Printf("Failed to auth %e\n", err)
+				c.logger.Errorf("Failed to auth with error %s", err.Error())
 				// Close the connection, we have the wrong password
 				c.ExitAndClose()
 				return
 			} else {
-				log.Printf("Sucessfully authenticated %s\n", c.conn.RemoteAddr())
+				c.logger.Debugf("Successfully authenticated %s\n", c.conn.RemoteAddr())
 			}
 		case <-c.runningContext.Done():
 			return
