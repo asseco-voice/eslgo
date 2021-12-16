@@ -20,21 +20,36 @@ import (
 	"github.com/AkronimBlack/eslgo/command"
 )
 
-func Dial(address, password string, timeout time.Duration, onDisconnect func()) (*Conn, error) {
-	c, err := net.DialTimeout("tcp", address, timeout)
+type DialOpts struct {
+	address, password string
+	timeout           time.Duration
+	onDisconnect      func()
+	logger            Logger
+}
+
+func NewDialOpts(address string, password string, timeout time.Duration, onDisconnect func(), logger Logger) *DialOpts {
+	return &DialOpts{address: address, password: password, timeout: timeout, onDisconnect: onDisconnect, logger: logger}
+}
+
+func Dial(opts *DialOpts, ctx context.Context) (*Conn, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	c, err := net.DialTimeout("tcp", opts.address, opts.timeout)
 	if err != nil {
 		return nil, err
 	}
-	connection := NewConnection(c, false)
+	connection := NewConnection(c, false, ctx, opts.logger)
 
 	// First auth
 	<-connection.responseChannels[TypeAuthRequest]
-	err = connection.doAuth(connection.runningContext, command.Auth{Password: password})
+	err = connection.doAuth(connection.runningContext, command.Auth{Password: opts.password})
 	if err != nil {
 		// Try to gracefully disconnect, we have the wrong password.
 		connection.ExitAndClose()
-		if onDisconnect != nil {
-			go onDisconnect()
+		if opts.onDisconnect != nil {
+			go opts.onDisconnect()
 		}
 		return nil, err
 	} else {
@@ -42,8 +57,8 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 	}
 
 	// Inbound only handlers
-	go connection.authLoop(command.Auth{Password: password})
-	go connection.disconnectLoop(onDisconnect)
+	go connection.authLoop(command.Auth{Password: opts.password})
+	go connection.disconnectLoop(opts.onDisconnect)
 
 	return connection, nil
 }
