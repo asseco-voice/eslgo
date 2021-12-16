@@ -36,7 +36,6 @@ type Conn struct {
 	eventListenerLock sync.RWMutex
 	eventListeners    map[string]map[string]EventListener
 	outbound          bool
-	closeOnce         sync.Once
 	logger            Logger
 }
 
@@ -138,18 +137,16 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 
 func (c *Conn) ExitAndClose() {
 	c.logger.Debugf("Invoking ExitAndClose")
-	c.closeOnce.Do(func() {
-		// Attempt a graceful closing of the connection with FreeSWITCH
-		ctx, cancel := context.WithTimeout(c.runningContext, time.Second)
-		_, _ = c.SendCommand(ctx, command.Exit{})
-		cancel()
-		c.close()
-	})
+	// Attempt a graceful closing of the connection with FreeSWITCH
+	ctx, cancel := context.WithTimeout(c.runningContext, time.Second)
+	_, _ = c.SendCommand(ctx, command.Exit{})
+	cancel()
+	c.close()
 }
 
 func (c *Conn) Close() {
 	c.logger.Debugf("Invoking Close")
-	c.closeOnce.Do(c.close)
+	c.close()
 }
 
 func (c *Conn) close() {
@@ -166,7 +163,10 @@ func (c *Conn) close() {
 	c.logger.Debugf("Response channels closed")
 
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
-	_ = c.conn.Close()
+	err := c.conn.Close()
+	if err != nil {
+		c.logger.Errorf("failed closing connection with error %s", err.Error())
+	}
 	c.logger.Debugf("close finished")
 }
 
