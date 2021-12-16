@@ -24,8 +24,6 @@ const (
 	udp  = "udp"
 	udp4 = "udp4"
 	udp6 = "udp6"
-
-	ClosedConnection = "use of closed network connection"
 )
 
 type OutboundHandler func(ctx context.Context, conn *Conn, connectResponse *RawResponse)
@@ -109,15 +107,3 @@ func listenerLoop(listener net.Listener, ctx context.Context, ch chan net.Conn, 
 		ch <- c
 	}
 }
-
-//func (c *Conn) dummyLoop() {
-//	select {
-//	case <-c.responseChannels[TypeDisconnect]:
-//		log.Println("Disconnect outbound connection", c.conn.RemoteAddr())
-//		c.Close()
-//	case <-c.responseChannels[TypeAuthRequest]:
-//		log.Println("Ignoring auth request on outbound connection", c.conn.RemoteAddr())
-//	case <-c.runningContext.Done():
-//		return
-//	}
-//}

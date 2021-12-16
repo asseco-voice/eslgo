@@ -137,6 +137,7 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 }
 
 func (c *Conn) ExitAndClose() {
+	c.logger.Debugf("Invoking ExitAndClose")
 	c.closeOnce.Do(func() {
 		// Attempt a graceful closing of the connection with FreeSWITCH
 		ctx, cancel := context.WithTimeout(c.runningContext, time.Second)
@@ -147,21 +148,26 @@ func (c *Conn) ExitAndClose() {
 }
 
 func (c *Conn) Close() {
+	c.logger.Debugf("Invoking Close")
 	c.closeOnce.Do(c.close)
 }
 
 func (c *Conn) close() {
+	c.logger.Debugf("Invoking close")
 	// Allow users to do anything they need to do before we tear everything down
 	c.stopFunc()
 	c.responseChanMutex.Lock()
 	defer c.responseChanMutex.Unlock()
+	c.logger.Debugf("Closing response channels")
 	for key, responseChan := range c.responseChannels {
 		close(responseChan)
 		delete(c.responseChannels, key)
 	}
+	c.logger.Debugf("Response channels closed")
 
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
 	_ = c.conn.Close()
+	c.logger.Debugf("close finished")
 }
 
 func (c *Conn) callEventListener(event *Event) {
