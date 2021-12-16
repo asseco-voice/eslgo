@@ -16,6 +16,7 @@ import (
 	"errors"
 	"net"
 	"net/textproto"
+	"strings"
 	"sync"
 	"time"
 
@@ -139,9 +140,12 @@ func (c *Conn) ExitAndClose() {
 	c.logger.Debugf("Invoking ExitAndClose")
 	// Attempt a graceful closing of the connection with FreeSWITCH
 	ctx, cancel := context.WithTimeout(c.runningContext, time.Second)
-	_, _ = c.SendCommand(ctx, command.Exit{})
+	resp, err := c.SendCommand(ctx, command.Exit{})
 	cancel()
-	c.close()
+	if err != nil || strings.Contains(resp.String(), "ERR") {
+		c.logger.Debugf("Graceful closing failed. Forcing connection close")
+		c.close()
+	}
 }
 
 func (c *Conn) Close() {
