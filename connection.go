@@ -14,7 +14,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"log"
 	"net"
 	"net/textproto"
 	"sync"
@@ -38,16 +37,23 @@ type Conn struct {
 	eventListeners    map[string]map[string]EventListener
 	outbound          bool
 	closeOnce         sync.Once
+	logger            Logger
 }
 
 const EndOfMessage = "\r\n\r\n"
 
-//NewConnection exported constructor for alterative builds
-func NewConnection(c net.Conn, outbound bool) *Conn {
+//NewConnection exported constructor for alternative builds
+//if no ctx passed in a new context will be used out of context.Background()
+func NewConnection(c net.Conn, outbound bool, ctx context.Context, logger Logger) *Conn {
+	if logger == nil {
+		logger = NewLogger()
+	}
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)
-
-	runningContext, stop := context.WithCancel(context.Background())
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runningContext, stop := context.WithCancel(ctx)
 
 	instance := &Conn{
 		conn:   c,
@@ -66,8 +72,9 @@ func NewConnection(c net.Conn, outbound bool) *Conn {
 		stopFunc:       stop,
 		eventListeners: make(map[string]map[string]EventListener),
 		outbound:       outbound,
+		logger:         logger,
 	}
-	go instance.receiveLoop()
+	go instance.readLoop()
 	go instance.eventLoop()
 	return instance
 }
@@ -226,14 +233,20 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readJSONEvent(raw.Body)
+		case <-c.responseChannels[TypeDisconnect]:
+			c.logger.Debugf("Disconnect outbound connection %s", c.conn.RemoteAddr().String())
+			c.Close()
+		case <-c.responseChannels[TypeAuthRequest]:
+			c.logger.Debugf("Ignoring auth request on outbound connection %s", c.conn.RemoteAddr().String())
 		case <-c.runningContext.Done():
+			c.logger.Debugf("context done with %s", c.runningContext.Err().Error())
 			c.responseChanMutex.RUnlock()
 			return
 		}
 		c.responseChanMutex.RUnlock()
 
 		if err != nil {
-			log.Printf("Error parsing event\n%s\n", err.Error())
+			c.logger.Debugf("Error parsing event %s", err.Error())
 			continue
 		}
 
@@ -241,14 +254,15 @@ func (c *Conn) eventLoop() {
 	}
 }
 
-func (c *Conn) receiveLoop() {
+func (c *Conn) readLoop() {
 	for c.runningContext.Err() == nil {
 		err := c.doMessage()
 		if err != nil {
-			log.Println("Error receiving message", err)
+			c.logger.Debugf("Error receiving message", err)
 			break
 		}
 	}
+	c.logger.Debug("Running context error ", c.runningContext.Err())
 }
 
 func (c *Conn) doMessage() error {
@@ -278,10 +292,41 @@ func (c *Conn) doMessage() error {
 			return c.runningContext.Err()
 		case <-ctx.Done():
 			// Do not return an error since this is not fatal but log since it could be a indication of problems
-			log.Printf("No one to handle response\nIs the connection overloaded or stopping?\n%v\n\n", response)
+			c.logger.Error("No one to handle response. Is the connection overloaded or stopping? Possible block?", response)
 		}
 	} else {
 		return errors.New("no response channel for Content-Type: " + response.GetHeader("Content-Type"))
 	}
 	return nil
+}
+
+func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	ctx = context.Background()
+	if opts.Timeout != 0 {
+		ctx, cancel = context.WithTimeout(c.runningContext, opts.Timeout)
+		cancel()
+	}
+
+	response, err := c.SendCommand(ctx, command.Connect{})
+	if err != nil {
+		c.logger.Errorf("Error connecting to %s error %s", c.conn.RemoteAddr().String(), err.Error())
+		// Try closing cleanly first
+		c.Close() // Not ExitAndClose since this error connection is most likely from communication failure
+		return
+	}
+	handler(c.runningContext, c, response)
+	// XXX This is ugly, the issue with short lived async sockets on our end is if they complete too fast we can actually
+	// close the connection before FreeSWITCH is in a state to close the connection on their end. 25ms is an magic value
+	// found by testing to have no failures on my test system. I started at 1 second and reduced as far as I could go.
+	// TODO We should open a bug report on the FreeSWITCH GitHub at some point and remove this when fixed.
+	// TODO This actually may be fixed: https://github.com/signalwire/freeswitch/pull/636
+	time.Sleep(25 * time.Millisecond)
+	if opts.Timeout != 0 {
+		ctx, cancel = context.WithTimeout(c.runningContext, opts.Timeout)
+		cancel()
+	}
+	_, _ = c.SendCommand(ctx, command.Exit{})
+	c.ExitAndClose()
 }

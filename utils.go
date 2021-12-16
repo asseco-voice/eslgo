@@ -12,6 +12,7 @@ package eslgo
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -37,4 +38,11 @@ func BuildVars(format string, vars map[string]string) string {
 		}
 	}
 	return fmt.Sprintf(format, builder.String())
+}
+
+func GetEnvString(key, defaultValue string) string {
+	if x := os.Getenv(key); x != "" {
+		return x
+	}
+	return defaultValue
 }

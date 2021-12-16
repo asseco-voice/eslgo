@@ -12,12 +12,9 @@ package eslgo
 
 import (
 	"context"
-	"errors"
-	"log"
+	"fmt"
 	"net"
 	"time"
-
-	"github.com/AkronimBlack/eslgo/command"
 )
 
 const (
@@ -31,10 +28,12 @@ const (
 
 type OutboundHandler func(ctx context.Context, conn *Conn, connectResponse *RawResponse)
 
-func NewOptions(network string, timout time.Duration) *Options {
+func NewOptions(network string, timout time.Duration, logger Logger, ctx context.Context) *Options {
 	return &Options{
 		Network: network,
 		Timeout: timout,
+		Logger:  logger,
+		Ctx:     ctx,
 	}
 }
 
@@ -48,74 +47,63 @@ type Options struct {
 	// (IPv4-only), "ip6" (IPv6-only), "unix", "unixgram" and
 	// "unixpacket".
 	Network string `json:"network"`
+	//Allow for closing on context done or error
+	Ctx    context.Context `json:"-"`
+	Logger Logger
 }
 
 /*ListenAndServe start listener with given options */
 func ListenAndServe(address string, handler OutboundHandler, opts *Options) error {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	logger := opts.Logger
+	if logger == nil {
+		logger = NewLogger()
+	}
+
 	network := tcp
 	if opts.Network != "" {
 		network = opts.Network
 	}
+
 	listener, err := net.Listen(network, address)
 	if err != nil {
 		return err
 	}
-	log.Printf("Listenting for new ESL connections on %s\n", listener.Addr().String())
+	defer listener.Close()
+
+	logger.Debugf("Listening for new ESL connections on %s", listener.Addr().String())
 	for {
-		c, err := listener.Accept()
-		if err != nil {
-			break
+		select {
+		case <-ctx.Done():
+			logger.Debugf("context done with %s", ctx.Err().Error())
+			return fmt.Errorf("context done with %s", ctx.Err().Error())
+		default:
+			c, err := listener.Accept()
+			if err != nil {
+				return err
+			}
+			logger.Debugf("New outbound connection from %s", c.RemoteAddr().String())
+			//use listener context to close all running connections on context.Done()
+			conn := NewConnection(c, true, ctx, logger)
+			//go conn.dummyLoop()
+			// Does not call the handler directly to ensure closing cleanly
+			go conn.outboundHandle(handler, opts)
 		}
-
-		log.Printf("New outbound connection from %s\n", c.RemoteAddr().String())
-		conn := NewConnection(c, true)
-		go conn.dummyLoop()
-		// Does not call the handler directly to ensure closing cleanly
-		go conn.outboundHandle(handler, opts)
-	}
-	log.Println("Outbound server shutting down")
-	return errors.New("connection closed")
-}
-
-func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
-	var ctx context.Context
-	var cancel context.CancelFunc
-	ctx = context.Background()
-	if opts.Timeout != 0 {
-		ctx, cancel = context.WithTimeout(c.runningContext, opts.Timeout)
-		cancel()
-	}
-
-	response, err := c.SendCommand(ctx, command.Connect{})
-	if err != nil {
-		log.Printf("Error connecting to %s error %s", c.conn.RemoteAddr().String(), err.Error())
-		// Try closing cleanly first
-		c.Close() // Not ExitAndClose since this error connection is most likely from communication failure
-		return
-	}
-	handler(c.runningContext, c, response)
-	// XXX This is ugly, the issue with short lived async sockets on our end is if they complete too fast we can actually
-	// close the connection before FreeSWITCH is in a state to close the connection on their end. 25ms is an magic value
-	// found by testing to have no failures on my test system. I started at 1 second and reduced as far as I could go.
-	// TODO We should open a bug report on the FreeSWITCH GitHub at some point and remove this when fixed.
-	// TODO This actually may be fixed: https://github.com/signalwire/freeswitch/pull/636
-	time.Sleep(25 * time.Millisecond)
-	if opts.Timeout != 0 {
-		ctx, cancel = context.WithTimeout(c.runningContext, opts.Timeout)
-		cancel()
-	}
-	_, _ = c.SendCommand(ctx, command.Exit{})
-	c.ExitAndClose()
-}
-
-func (c *Conn) dummyLoop() {
-	select {
-	case <-c.responseChannels[TypeDisconnect]:
-		log.Println("Disconnect outbound connection", c.conn.RemoteAddr())
-		c.Close()
-	case <-c.responseChannels[TypeAuthRequest]:
-		log.Println("Ignoring auth request on outbound connection", c.conn.RemoteAddr())
-	case <-c.runningContext.Done():
-		return
 	}
 }
+
+//func (c *Conn) dummyLoop() {
+//	select {
+//	case <-c.responseChannels[TypeDisconnect]:
+//		log.Println("Disconnect outbound connection", c.conn.RemoteAddr())
+//		c.Close()
+//	case <-c.responseChannels[TypeAuthRequest]:
+//		log.Println("Ignoring auth request on outbound connection", c.conn.RemoteAddr())
+//	case <-c.runningContext.Done():
+//		return
+//	}
+//}
