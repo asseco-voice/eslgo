@@ -75,24 +75,35 @@ func ListenAndServe(address string, handler OutboundHandler, opts *Options) erro
 	}
 	defer listener.Close()
 
+	//make conn channel to give it some room
+	connCh := make(chan net.Conn, 100)
+
 	logger.Debugf("Listening for new ESL connections on %s", listener.Addr().String())
+	go listenerLoop(listener, ctx, connCh, logger)
 	for {
 		select {
 		case <-ctx.Done():
 			logger.Debugf("context done with %s", ctx.Err().Error())
 			return fmt.Errorf("context done with %s", ctx.Err().Error())
-		default:
-			c, err := listener.Accept()
-			if err != nil {
-				return err
-			}
-			logger.Debugf("New outbound connection from %s", c.RemoteAddr().String())
+		case c := <-connCh:
 			//use listener context to close all running connections on context.Done()
 			conn := NewConnection(c, true, ctx, logger)
 			//go conn.dummyLoop()
 			// Does not call the handler directly to ensure closing cleanly
 			go conn.outboundHandle(handler, opts)
 		}
+	}
+}
+
+func listenerLoop(listener net.Listener, ctx context.Context, ch chan net.Conn, logger Logger) {
+	_, cancel := context.WithCancel(ctx)
+	for {
+		c, err := listener.Accept()
+		if err != nil {
+			logger.Errorf("failed accepting connection with error %s", err.Error())
+			cancel()
+		}
+		ch <- c
 	}
 }
 
