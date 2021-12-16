@@ -144,6 +144,7 @@ func (c *Conn) ExitAndClose() {
 	cancel()
 	if err != nil || strings.Contains(resp.String(), "ERR") {
 		c.logger.Debugf("Graceful closing failed. Forcing connection close")
+		c.logger.Debugf("Error %s", err.Error())
 		c.close()
 	}
 }
@@ -272,7 +273,6 @@ func (c *Conn) readLoop() {
 			break
 		}
 	}
-	c.logger.Debug("Running context error ", c.runningContext.Err())
 }
 
 func (c *Conn) doMessage() error {
