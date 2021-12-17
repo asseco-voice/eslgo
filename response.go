@@ -40,6 +40,9 @@ func (c *Conn) readResponse() (*RawResponse, error) {
 	reader := bufio.NewReader(c.conn)
 	h := textproto.NewReader(reader)
 	header, err := h.ReadMIMEHeader()
+	if header.Get("Content-Type") == "" {
+		header = c.mimeHeader
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -11,9 +11,12 @@
 package eslgo
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"log"
 	"net"
+	"net/textproto"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +28,7 @@ import (
 /*Conn ...*/
 type Conn struct {
 	conn              net.Conn
+	mimeHeader        textproto.MIMEHeader
 	writeLock         sync.Mutex
 	runningContext    context.Context
 	stopFunc          func()
@@ -47,10 +51,18 @@ func NewConnection(c net.Conn, outbound bool, ctx context.Context, logger Logger
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	runningContext, stop := context.WithCancel(ctx)
+	reader := bufio.NewReader(c)
+	h := textproto.NewReader(reader)
+	header, err := h.ReadMIMEHeader()
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
 
+	runningContext, stop := context.WithCancel(ctx)
 	instance := &Conn{
-		conn: c,
+		conn:       c,
+		mimeHeader: header,
 		responseChannels: map[string]chan *RawResponse{
 			TypeReply:       make(chan *RawResponse),
 			TypeAPIResponse: make(chan *RawResponse),
