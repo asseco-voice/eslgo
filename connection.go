@@ -14,7 +14,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"log"
 	"net"
 	"net/textproto"
 	"strings"
@@ -28,7 +27,8 @@ import (
 /*Conn ...*/
 type Conn struct {
 	conn              net.Conn
-	mimeHeader        textproto.MIMEHeader
+	reader            *bufio.Reader
+	header            *textproto.Reader
 	writeLock         sync.Mutex
 	runningContext    context.Context
 	stopFunc          func()
@@ -48,21 +48,17 @@ func NewConnection(c net.Conn, outbound bool, ctx context.Context, logger Logger
 	if logger == nil {
 		logger = NewLogger()
 	}
+	reader := bufio.NewReader(c)
+	header := textproto.NewReader(reader)
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	reader := bufio.NewReader(c)
-	h := textproto.NewReader(reader)
-	header, err := h.ReadMIMEHeader()
-	if err != nil {
-		log.Print(err)
-		return nil
-	}
-
 	runningContext, stop := context.WithCancel(ctx)
+
 	instance := &Conn{
-		conn:       c,
-		mimeHeader: header,
+		conn:   c,
+		reader: reader,
+		header: header,
 		responseChannels: map[string]chan *RawResponse{
 			TypeReply:       make(chan *RawResponse),
 			TypeAPIResponse: make(chan *RawResponse),

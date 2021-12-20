@@ -11,7 +11,6 @@
 package eslgo
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"net/textproto"
@@ -37,12 +36,7 @@ type RawResponse struct {
 }
 
 func (c *Conn) readResponse() (*RawResponse, error) {
-	reader := bufio.NewReader(c.conn)
-	h := textproto.NewReader(reader)
-	header, err := h.ReadMIMEHeader()
-	if header.Get("Content-Type") == "" {
-		header = c.mimeHeader
-	}
+	header, err := c.header.ReadMIMEHeader()
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +50,7 @@ func (c *Conn) readResponse() (*RawResponse, error) {
 			return response, err
 		}
 		response.Body = make([]byte, length)
-		_, err = io.ReadFull(reader, response.Body)
+		_, err = io.ReadFull(c.reader, response.Body)
 		if err != nil {
 			return response, err
 		}
