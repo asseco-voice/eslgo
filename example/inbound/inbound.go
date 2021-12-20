@@ -13,30 +13,63 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/AkronimBlack/eslgo/command"
+	"github.com/google/uuid"
+	"log"
+	"net/http"
 	"time"
 
 	"github.com/AkronimBlack/eslgo"
 )
 
 func main() {
-	// Connect to FreeSWITCH
-	conn, err := eslgo.Dial("127.0.0.1:8021", "ClueCon", 2*time.Second, func() {
+	go func() {
+		fmt.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+	opts := eslgo.NewDialOpts("10.135.11.97:8021", "ClueCon", 2*time.Second, func() {
 		fmt.Println("Inbound Connection Disconnected")
-	})
+	}, nil)
+
+	ctx := context.Background()
+
+	// Connect to FreeSWITCH
+	conn, err := eslgo.Dial(ctx, opts)
 	if err != nil {
 		fmt.Println("Error connecting", err)
 		return
 	}
 
+	channelUuid := uuid.New().String()
+
 	// Create a basic context
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	// Place the call in the background(bgapi) to user 100 and playback an audio file as the bLeg and no exported variables
-	response, err := conn.OriginateCall(ctx, true, eslgo.Leg{CallURL: "user/100"}, eslgo.Leg{CallURL: "&playback(misc/ivr-to_hear_screaming_monkeys.wav)"}, map[string]string{})
+	response, err := conn.OriginateCall(
+		ctx,
+		true,
+		eslgo.Leg{CallURL: "user/777"},
+		eslgo.Leg{CallURL: "&park()"},
+		map[string]string{"origination_uuid": channelUuid})
 	fmt.Println("Call Originated: ", response, err)
 
-	// Close the connection after sleeping for a bit
-	time.Sleep(60 * time.Second)
+	ch := make(chan *eslgo.Event, 10)
+
+	conn.RegisterEventListener(eslgo.EventListenAll, func(event *eslgo.Event) {
+		ch <- event
+	})
+
+	resp, err := conn.SendCommand(ctx, command.Event{
+		Format: "plain",
+		Listen: []string{"all"},
+	})
+
+	log.Print(resp, err)
+
+	for {
+		msg := <-ch
+		log.Print(msg.String())
+	}
+
 	conn.ExitAndClose()
 }

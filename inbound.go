@@ -30,7 +30,7 @@ func NewDialOpts(address string, password string, timeout time.Duration, onDisco
 	return &DialOpts{address: address, password: password, timeout: timeout, onDisconnect: onDisconnect, logger: logger}
 }
 
-func Dial(opts *DialOpts, ctx context.Context) (*Conn, error) {
+func Dial(ctx context.Context, opts *DialOpts) (*Conn, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
