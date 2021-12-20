@@ -232,7 +232,7 @@ func (c *Conn) eventLoop() {
 				c.responseChanMutex.RUnlock()
 				return
 			}
-			event = &Event{Headers: raw.Headers, Body: raw.Body}
+			event, err = readPlainEvent(raw.Body)
 		case raw := <-c.responseChannels[TypeEventXML]:
 			if raw == nil {
 				// We only get nil here if the channel is closed
