@@ -63,7 +63,6 @@ func handleConnection(ctx context.Context, conn *eslgo.Conn, response *eslgo.Raw
 	err = conn.AnswerCall(ctx, channelUuid)
 	for {
 		msg := <-ch
-		log.Println("#########################################")
 		log.Print(msg.String())
 	}
 

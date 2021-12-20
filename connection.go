@@ -15,7 +15,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
 	"net"
 	"net/textproto"
 	"strconv"
@@ -181,6 +180,11 @@ func (c *Conn) close() {
 func (c *Conn) callEventListener(event *Event) {
 	c.eventListenerLock.RLock()
 	defer c.eventListenerLock.RUnlock()
+
+	channelUUID := event.GetHeader("Unique-ID")
+	appUUID := event.GetHeader("Application-UUID")
+	jobUUID := event.GetHeader("Job-UUID")
+
 	// First check if there are any general event listener
 	if listeners, ok := c.eventListeners[EventListenAll]; ok {
 		for _, listener := range listeners {
@@ -189,8 +193,7 @@ func (c *Conn) callEventListener(event *Event) {
 	}
 
 	// Next call any listeners for a particular channel
-	if event.HasHeader("Unique-ID") {
-		channelUUID := event.GetHeader("Unique-ID")
+	if channelUUID != "" {
 		if listeners, ok := c.eventListeners[channelUUID]; ok {
 			for _, listener := range listeners {
 				go listener(event)
@@ -199,8 +202,7 @@ func (c *Conn) callEventListener(event *Event) {
 	}
 
 	// Next call any listeners for a particular application
-	if event.HasHeader("Application-UUID") {
-		appUUID := event.GetHeader("Application-UUID")
+	if appUUID != "" {
 		if listeners, ok := c.eventListeners[appUUID]; ok {
 			for _, listener := range listeners {
 				go listener(event)
@@ -209,8 +211,7 @@ func (c *Conn) callEventListener(event *Event) {
 	}
 
 	// Next call any listeners for a particular job
-	if event.HasHeader("Job-UUID") {
-		jobUUID := event.GetHeader("Job-UUID")
+	if jobUUID != "" {
 		if listeners, ok := c.eventListeners[jobUUID]; ok {
 			for _, listener := range listeners {
 				go listener(event)
@@ -316,8 +317,6 @@ func (c *Conn) doMessage() error {
 			return err
 		}
 	}
-
-	log.Println("HEADER TYPE ", response.GetHeader("Content-Type"))
 
 	c.responseChanMutex.RLock()
 	defer c.responseChanMutex.RUnlock()
