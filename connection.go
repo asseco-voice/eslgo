@@ -14,9 +14,11 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/textproto"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -177,10 +179,8 @@ func (c *Conn) close() {
 }
 
 func (c *Conn) callEventListener(event *Event) {
-	log.Println("CALLING callEventListener 33333333333333333333333333333333")
 	c.eventListenerLock.RLock()
 	defer c.eventListenerLock.RUnlock()
-	log.Print(event)
 	// First check if there are any general event listener
 	if listeners, ok := c.eventListeners[EventListenAll]; ok {
 		for _, listener := range listeners {
@@ -297,10 +297,27 @@ func (c *Conn) TypeChannel(chType string) chan *RawResponse {
 }
 
 func (c *Conn) doMessage() error {
-	response, err := c.readResponse()
+	header, err := c.header.ReadMIMEHeader()
 	if err != nil {
 		return err
 	}
+	response := &RawResponse{
+		Headers: header,
+	}
+
+	if contentLength := header.Get("Content-Length"); len(contentLength) > 0 {
+		length, err := strconv.Atoi(contentLength)
+		if err != nil {
+			return err
+		}
+		response.Body = make([]byte, length)
+		_, err = io.ReadFull(c.reader, response.Body)
+		if err != nil {
+			return err
+		}
+	}
+
+	log.Println("HEADER TYPE ", response.GetHeader("Content-Type"))
 
 	c.responseChanMutex.RLock()
 	defer c.responseChanMutex.RUnlock()
