@@ -80,7 +80,7 @@ func (e Event) GetName() string {
 
 // HasHeader Helper to check if the Event has a header
 func (e Event) HasHeader(header string) bool {
-	_, ok := e.Headers[textproto.CanonicalMIMEHeaderKey(header)]
+	_, ok := e.Headers[header]
 	return ok
 }
 
