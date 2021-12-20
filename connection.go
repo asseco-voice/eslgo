@@ -14,6 +14,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"log"
 	"net"
 	"net/textproto"
 	"strings"
@@ -176,9 +177,10 @@ func (c *Conn) close() {
 }
 
 func (c *Conn) callEventListener(event *Event) {
+	log.Println("CALLING callEventListener 33333333333333333333333333333333")
 	c.eventListenerLock.RLock()
 	defer c.eventListenerLock.RUnlock()
-
+	log.Print(event)
 	// First check if there are any general event listener
 	if listeners, ok := c.eventListeners[EventListenAll]; ok {
 		for _, listener := range listeners {
@@ -229,7 +231,6 @@ func (c *Conn) eventLoop() {
 				c.responseChanMutex.RUnlock()
 				return
 			}
-			//event, err = readPlainEvent(raw.Body)
 			event = &Event{Headers: raw.Headers, Body: raw.Body}
 		case raw := <-c.responseChannels[TypeEventXML]:
 			if raw == nil {
@@ -276,6 +277,25 @@ func (c *Conn) readLoop() {
 	}
 }
 
+func (c *Conn) TypeChannel(chType string) chan *RawResponse {
+	switch chType {
+	case TypeReply:
+		return c.responseChannels[TypeReply]
+	case TypeAPIResponse:
+		return c.responseChannels[TypeAPIResponse]
+	case TypeEventXML:
+		return c.responseChannels[TypeEventXML]
+	case TypeEventJSON:
+		return c.responseChannels[TypeEventJSON]
+	case TypeAuthRequest:
+		return c.responseChannels[TypeAuthRequest]
+	case TypeDisconnect:
+		return c.responseChannels[TypeDisconnect]
+	default:
+		return c.responseChannels[TypeEventPlain]
+	}
+}
+
 func (c *Conn) doMessage() error {
 	response, err := c.readResponse()
 	if err != nil {
@@ -284,29 +304,21 @@ func (c *Conn) doMessage() error {
 
 	c.responseChanMutex.RLock()
 	defer c.responseChanMutex.RUnlock()
-	responseChan, ok := c.responseChannels[response.GetHeader("Content-Type")]
-	if !ok && len(c.responseChannels) <= 0 {
+	responseChan := c.TypeChannel(response.GetHeader("Content-Type"))
+	if responseChan == nil {
 		// We must have shutdown!
 		return errors.New("no response channels")
 	}
 
-	// We have a handler
-	if ok {
-		// Only allow 5 seconds to allow the handler to receive hte message on the channel
-		ctx, cancel := context.WithTimeout(c.runningContext, 5*time.Second)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(c.runningContext, 5*time.Second)
+	defer cancel()
 
-		select {
-		case responseChan <- response:
-		case <-c.runningContext.Done():
-			// Parent connection context has stopped we most likely shutdown in the middle of waiting for a handler to handle the message
-			return c.runningContext.Err()
-		case <-ctx.Done():
-			// Do not return an error since this is not fatal but log since it could be a indication of problems
-			c.logger.Error("No one to handle response. Is the connection overloaded or stopping? Possible block?", response)
-		}
-	} else {
-		return errors.New("no response channel for Content-Type: " + response.GetHeader("Content-Type"))
+	select {
+	case responseChan <- response:
+	case <-c.runningContext.Done():
+		return c.runningContext.Err()
+	case <-ctx.Done():
+		c.logger.Error("No one to handle response. Is the connection overloaded or stopping? Possible block?", response)
 	}
 	return nil
 }

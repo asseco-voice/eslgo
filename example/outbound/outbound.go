@@ -42,12 +42,6 @@ func handleConnection(ctx context.Context, conn *eslgo.Conn, response *eslgo.Raw
 	//log.Print(response.String())
 	channelUuid := response.GetHeader("Unique-Id")
 	log.Println(channelUuid)
-	conn.RegisterEventListener(channelUuid, func(event *eslgo.Event) {
-		ch <- event
-	})
-	conn.RegisterEventListener(eslgo.EventListenAll, func(event *eslgo.Event) {
-		ch <- event
-	})
 
 	_, err := conn.SendCommand(ctx, command.Event{
 		Format: "plain",
@@ -58,6 +52,13 @@ func handleConnection(ctx context.Context, conn *eslgo.Conn, response *eslgo.Raw
 		log.Panic(err)
 		return
 	}
+
+	conn.RegisterEventListener(channelUuid, func(event *eslgo.Event) {
+		ch <- event
+	})
+	conn.RegisterEventListener(eslgo.EventListenAll, func(event *eslgo.Event) {
+		ch <- event
+	})
 
 	err = conn.AnswerCall(ctx, channelUuid)
 	for {
