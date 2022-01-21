@@ -165,9 +165,9 @@ func (c *Conn) close() {
 		delete(c.responseChannels, key)
 	}
 
+	c.stopFunc()
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
 	_ = c.conn.Close()
-	c.stopFunc()
 }
 
 func (c *Conn) callEventListener(event *Event) {
