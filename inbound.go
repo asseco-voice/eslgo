@@ -40,26 +40,27 @@ func Dial(address, password string, timeout time.Duration) (*Conn, error) {
 
 	// Inbound only handlers
 	go connection.authLoop(command.Auth{Password: password})
-	go connection.disconnectLoop()
+	//go connection.disconnectLoop()
 
 	return connection, nil
 }
 
-func (c *Conn) disconnectLoop() {
-	select {
-	case <-c.responseChannels[TypeDisconnect]:
-		c.Close()
-		if c.FinishedChannel() != nil {
-			c.FinishedChannel() <- true
-		}
-		return
-	case <-c.runningContext.Done():
-		if c.FinishedChannel() != nil {
-			c.FinishedChannel() <- false
-		}
-		return
-	}
-}
+//func (c *Conn) disconnectLoop() {
+//	select {
+//	case <-c.responseChannels[TypeDisconnect]:
+//		c.Close()
+//		if c.FinishedChannel() != nil {
+//			c.FinishedChannel() <- true
+//		}
+//		return
+//	case <-c.runningContext.Done():
+//		c.stopFunc()
+//		if c.FinishedChannel() != nil {
+//			c.FinishedChannel() <- false
+//		}
+//		return
+//	}
+//}
 
 func (c *Conn) authLoop(auth command.Auth) {
 	for {

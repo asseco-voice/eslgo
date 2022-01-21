@@ -161,7 +161,7 @@ func (c *Conn) close() {
 		close(responseChan)
 		delete(c.responseChannels, key)
 	}
-
+	close(c.finishedChannel)
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
 	_ = c.conn.Close()
 }
@@ -235,8 +235,17 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readJSONEvent(raw.Body)
+		case <-c.responseChannels[TypeDisconnect]:
+			c.Close()
+			if c.FinishedChannel() != nil {
+				c.FinishedChannel() <- true
+			}
+			return
 		case <-c.runningContext.Done():
 			c.responseChanMutex.RUnlock()
+			if c.FinishedChannel() != nil {
+				c.FinishedChannel() <- false
+			}
 			return
 		}
 		c.responseChanMutex.RUnlock()

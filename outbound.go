@@ -69,7 +69,7 @@ func ListenAndServe(address string, handler OutboundHandler, opts *Options) erro
 
 		log.Printf("New outbound connection from %s\n", c.RemoteAddr().String())
 		conn := NewConnection(c, true)
-		go conn.dummyLoop()
+		//go conn.dummyLoop()
 		// Does not call the handler directly to ensure closing cleanly
 		go conn.outboundHandle(handler, opts)
 	}
@@ -108,21 +108,22 @@ func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
 	c.ExitAndClose()
 }
 
-func (c *Conn) dummyLoop() {
-	select {
-	case <-c.responseChannels[TypeDisconnect]:
-		log.Println("Disconnect outbound connection", c.conn.RemoteAddr())
-		c.Close()
-		if c.FinishedChannel() != nil {
-			c.FinishedChannel() <- true
-		}
-		return
-	case <-c.responseChannels[TypeAuthRequest]:
-		log.Println("Ignoring auth request on outbound connection", c.conn.RemoteAddr())
-	case <-c.runningContext.Done():
-		if c.FinishedChannel() != nil {
-			c.FinishedChannel() <- false
-		}
-		return
-	}
-}
+//func (c *Conn) dummyLoop() {
+//	select {
+//	case <-c.responseChannels[TypeDisconnect]:
+//		log.Println("Disconnect outbound connection", c.conn.RemoteAddr())
+//		c.Close()
+//		if c.FinishedChannel() != nil {
+//			c.FinishedChannel() <- true
+//		}
+//		return
+//	case <-c.responseChannels[TypeAuthRequest]:
+//		log.Println("Ignoring auth request on outbound connection", c.conn.RemoteAddr())
+//	case <-c.runningContext.Done():
+//		c.stopFunc()
+//		if c.FinishedChannel() != nil {
+//			c.FinishedChannel() <- false
+//		}
+//		return
+//	}
+//}
