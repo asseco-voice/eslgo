@@ -272,7 +272,6 @@ func (c *Conn) receiveLoop() {
 		if err != nil {
 			return
 		}
-
 		c.responseChanMutex.RLock()
 		responseChan, ok := c.responseChannels[response.GetHeader("Content-Type")]
 		if !ok && len(c.responseChannels) <= 0 {
