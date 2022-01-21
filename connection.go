@@ -38,11 +38,20 @@ type Conn struct {
 	eventListeners    map[string]map[string]EventListener
 	outbound          bool
 	closeOnce         sync.Once
+	finishedChannel   chan bool
+}
+
+func (c *Conn) FinishedChannel() chan bool {
+	return c.finishedChannel
+}
+
+func (c *Conn) SetFinishedChannel(finishedChannel chan bool) {
+	c.finishedChannel = finishedChannel
 }
 
 const EndOfMessage = "\r\n\r\n"
 
-//NewConnection exported constructor for alterative builds
+//NewConnection exported constructor for alternative builds
 func NewConnection(c net.Conn, outbound bool) *Conn {
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)

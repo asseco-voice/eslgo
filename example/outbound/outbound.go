@@ -25,8 +25,26 @@ func main() {
 
 func handleConnection(ctx context.Context, conn *eslgo.Conn, response *eslgo.RawResponse) {
 	fmt.Printf("Got connection! %#v\n", response)
+	finished := make(chan bool)
+	conn.SetFinishedChannel(finished)
 
-	// Place the call in the foreground(api) to user 100 and playback an audio file as the bLeg and no exported variables
-	response, err := conn.OriginateCall(ctx, false, eslgo.Leg{CallURL: "user/100"}, eslgo.Leg{CallURL: "&playback(misc/ivr-to_hear_screaming_monkeys.wav)"}, map[string]string{})
+	response, err := conn.OriginateCall(
+		ctx,
+		false,
+		eslgo.Leg{CallURL: "user/100"},
+		eslgo.Leg{CallURL: "&playback(misc/ivr-to_hear_screaming_monkeys.wav)"},
+		map[string]string{})
+
 	fmt.Println("Call Originated: ", response, err)
+	if err != nil {
+		return
+	}
+
+	if !response.IsOk() {
+		return
+	}
+	fmt.Println("Waiting for connection finished event")
+	<-finished
+	fmt.Println("Connection finished")
+
 }

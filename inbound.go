@@ -20,7 +20,7 @@ import (
 	"github.com/AkronimBlack/eslgo/command"
 )
 
-func Dial(address, password string, timeout time.Duration, onFinish func(disconnected bool)) (*Conn, error) {
+func Dial(address, password string, timeout time.Duration) (*Conn, error) {
 	c, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return nil, err
@@ -33,9 +33,6 @@ func Dial(address, password string, timeout time.Duration, onFinish func(disconn
 	if err != nil {
 		// Try to gracefully disconnect, we have the wrong password.
 		connection.ExitAndClose()
-		if onFinish != nil {
-			go onFinish(false)
-		}
 		return nil, err
 	} else {
 		log.Printf("Sucessfully authenticated %s\n", connection.conn.RemoteAddr())
@@ -43,22 +40,22 @@ func Dial(address, password string, timeout time.Duration, onFinish func(disconn
 
 	// Inbound only handlers
 	go connection.authLoop(command.Auth{Password: password})
-	go connection.disconnectLoop(onFinish)
+	go connection.disconnectLoop()
 
 	return connection, nil
 }
 
-func (c *Conn) disconnectLoop(onFinish func(disconnected bool)) {
+func (c *Conn) disconnectLoop() {
 	select {
 	case <-c.responseChannels[TypeDisconnect]:
 		c.Close()
-		if onFinish != nil {
-			onFinish(true)
+		if c.FinishedChannel() != nil {
+			c.FinishedChannel() <- true
 		}
 		return
 	case <-c.runningContext.Done():
-		if onFinish != nil {
-			onFinish(false)
+		if c.FinishedChannel() != nil {
+			c.FinishedChannel() <- false
 		}
 		return
 	}

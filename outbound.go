@@ -47,8 +47,7 @@ type Options struct {
 	// "udp", "udp4" (IPv4-only), "udp6" (IPv6-only), "ip", "ip4"
 	// (IPv4-only), "ip6" (IPv6-only), "unix", "unixgram" and
 	// "unixpacket".
-	Network  string `json:"network"`
-	OnFinish func(disconnected bool)
+	Network string `json:"network"`
 }
 
 /*ListenAndServe start listener with given options */
@@ -70,7 +69,7 @@ func ListenAndServe(address string, handler OutboundHandler, opts *Options) erro
 
 		log.Printf("New outbound connection from %s\n", c.RemoteAddr().String())
 		conn := NewConnection(c, true)
-		go conn.dummyLoop(opts.OnFinish)
+		go conn.dummyLoop()
 		// Does not call the handler directly to ensure closing cleanly
 		go conn.outboundHandle(handler, opts)
 	}
@@ -109,16 +108,21 @@ func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
 	c.ExitAndClose()
 }
 
-func (c *Conn) dummyLoop(onFinish func(disconnected bool)) {
+func (c *Conn) dummyLoop() {
 	select {
 	case <-c.responseChannels[TypeDisconnect]:
 		log.Println("Disconnect outbound connection", c.conn.RemoteAddr())
 		c.Close()
-		onFinish(true)
+		if c.FinishedChannel() != nil {
+			c.FinishedChannel() <- true
+		}
+		return
 	case <-c.responseChannels[TypeAuthRequest]:
 		log.Println("Ignoring auth request on outbound connection", c.conn.RemoteAddr())
 	case <-c.runningContext.Done():
-		onFinish(false)
+		if c.FinishedChannel() != nil {
+			c.FinishedChannel() <- false
+		}
 		return
 	}
 }
