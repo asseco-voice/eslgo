@@ -20,7 +20,7 @@ import (
 	"github.com/AkronimBlack/eslgo/command"
 )
 
-func Dial(address, password string, timeout time.Duration, onDisconnect func()) (*Conn, error) {
+func Dial(address, password string, timeout time.Duration, onFinish func(disconnected bool)) (*Conn, error) {
 	c, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return nil, err
@@ -33,8 +33,8 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 	if err != nil {
 		// Try to gracefully disconnect, we have the wrong password.
 		connection.ExitAndClose()
-		if onDisconnect != nil {
-			go onDisconnect()
+		if onFinish != nil {
+			go onFinish(false)
 		}
 		return nil, err
 	} else {
@@ -43,20 +43,23 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 
 	// Inbound only handlers
 	go connection.authLoop(command.Auth{Password: password})
-	go connection.disconnectLoop(onDisconnect)
+	go connection.disconnectLoop(onFinish)
 
 	return connection, nil
 }
 
-func (c *Conn) disconnectLoop(onDisconnect func()) {
+func (c *Conn) disconnectLoop(onFinish func(disconnected bool)) {
 	select {
 	case <-c.responseChannels[TypeDisconnect]:
 		c.Close()
-		if onDisconnect != nil {
-			onDisconnect()
+		if onFinish != nil {
+			onFinish(true)
 		}
 		return
 	case <-c.runningContext.Done():
+		if onFinish != nil {
+			onFinish(false)
+		}
 		return
 	}
 }
