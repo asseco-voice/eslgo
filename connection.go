@@ -237,17 +237,8 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readJSONEvent(raw.Body)
-		case <-c.responseChannels[TypeDisconnect]:
-			c.Close()
-			if c.FinishedChannel() != nil {
-				c.FinishedChannel() <- true
-			}
-			return
 		case <-c.runningContext.Done():
 			c.responseChanMutex.RUnlock()
-			if c.FinishedChannel() != nil {
-				c.FinishedChannel() <- false
-			}
 			return
 		}
 		c.responseChanMutex.RUnlock()
@@ -263,26 +254,38 @@ func (c *Conn) eventLoop() {
 
 func (c *Conn) receiveLoop() {
 	for c.runningContext.Err() == nil {
-		err := c.doMessage()
+		disconnected, err := c.doMessage()
 		if err != nil {
 			log.Println("Error receiving message", err)
+			break
+		}
+		if disconnected {
+			c.stopFunc()
+			if c.FinishedChannel() != nil {
+				c.FinishedChannel() <- true
+			}
 			break
 		}
 	}
 }
 
-func (c *Conn) doMessage() error {
+func (c *Conn) doMessage() (bool, error) {
 	response, err := c.readResponse()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	c.responseChanMutex.RLock()
 	defer c.responseChanMutex.RUnlock()
+
+	if response.GetHeader("Content-Type") == TypeDisconnect {
+		return true, nil
+	}
+
 	responseChan, ok := c.responseChannels[response.GetHeader("Content-Type")]
 	if !ok && len(c.responseChannels) <= 0 {
 		// We must have shutdown!
-		return errors.New("no response channels")
+		return false, errors.New("no response channels")
 	}
 
 	// We have a handler
@@ -295,13 +298,13 @@ func (c *Conn) doMessage() error {
 		case responseChan <- response:
 		case <-c.runningContext.Done():
 			// Parent connection context has stopped we most likely shutdown in the middle of waiting for a handler to handle the message
-			return c.runningContext.Err()
+			return false, c.runningContext.Err()
 		case <-ctx.Done():
 			// Do not return an error since this is not fatal but log since it could be a indication of problems
 			log.Printf("No one to handle response\nIs the connection overloaded or stopping?\n%v\n\n", response)
 		}
 	} else {
-		return errors.New("no response channel for Content-Type: " + response.GetHeader("Content-Type"))
+		return false, errors.New("no response channel for Content-Type: " + response.GetHeader("Content-Type"))
 	}
-	return nil
+	return false, nil
 }
