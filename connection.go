@@ -40,6 +40,10 @@ type Conn struct {
 	closeOnce         sync.Once
 }
 
+func (c *Conn) RunningContext() context.Context {
+	return c.runningContext
+}
+
 const EndOfMessage = "\r\n\r\n"
 
 //NewConnection exported constructor for alterative builds
