@@ -161,7 +161,9 @@ func (c *Conn) close() {
 		close(responseChan)
 		delete(c.responseChannels, key)
 	}
-	close(c.finishedChannel)
+	if c.finishedChannel != nil {
+		close(c.finishedChannel)
+	}
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
 	_ = c.conn.Close()
 }
