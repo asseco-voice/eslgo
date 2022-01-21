@@ -158,7 +158,6 @@ func (c *Conn) Close() {
 
 func (c *Conn) close() {
 	// Allow users to do anything they need to do before we tear everything down
-	c.stopFunc()
 	c.responseChanMutex.Lock()
 	defer c.responseChanMutex.Unlock()
 	for key, responseChan := range c.responseChannels {
@@ -168,6 +167,7 @@ func (c *Conn) close() {
 
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
 	_ = c.conn.Close()
+	c.stopFunc()
 }
 
 func (c *Conn) callEventListener(event *Event) {
