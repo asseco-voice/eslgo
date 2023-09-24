@@ -14,7 +14,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/textproto"
@@ -280,7 +279,8 @@ func (c *Conn) doMessage() error {
 		case <-ctx.Done():
 			// Do not return an error since this is not fatal but log since it could be a indication of problems
 			log.Printf("No one to handle response\nIs the connection overloaded or stopping?\n%v\n\n", response)
-			return fmt.Errorf("No one to handle response\nIs the connection overloaded or stopping?\n%v\n\n", response)
+			_, stopContext := context.WithCancel(ctx)
+			stopContext()
 		}
 	} else {
 		return errors.New("no response channel for Content-Type: " + response.GetHeader("Content-Type"))
