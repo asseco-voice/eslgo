@@ -51,7 +51,7 @@ func (c *Conn) SetFinishedChannel(finishedChannel chan bool) {
 
 const EndOfMessage = "\r\n\r\n"
 
-//NewConnection exported constructor for alternative builds
+// NewConnection exported constructor for alternative builds
 func NewConnection(c net.Conn, outbound bool) *Conn {
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)
@@ -302,6 +302,7 @@ func (c *Conn) doMessage() (bool, error) {
 		case <-ctx.Done():
 			// Do not return an error since this is not fatal but log since it could be a indication of problems
 			log.Printf("No one to handle response\nIs the connection overloaded or stopping?\n%v\n\n", response)
+			c.stopFunc()
 		}
 	} else {
 		return false, errors.New("no response channel for Content-Type: " + response.GetHeader("Content-Type"))
