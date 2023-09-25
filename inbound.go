@@ -25,7 +25,7 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 	if err != nil {
 		return nil, err
 	}
-	connection := NewConnection(c, false)
+	connection := NewConnection(c, false, onDisconnect)
 
 	// First auth
 	<-connection.responseChannels[TypeAuthRequest]
@@ -43,22 +43,8 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 
 	// Inbound only handlers
 	go connection.authLoop(command.Auth{Password: password})
-	go connection.disconnectLoop(onDisconnect)
 
 	return connection, nil
-}
-
-func (c *Conn) disconnectLoop(onDisconnect func()) {
-	select {
-	case <-c.responseChannels[TypeDisconnect]:
-		c.Close()
-		if onDisconnect != nil {
-			onDisconnect()
-		}
-		return
-	case <-c.runningContext.Done():
-		return
-	}
 }
 
 func (c *Conn) authLoop(auth command.Auth) {

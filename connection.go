@@ -39,6 +39,11 @@ type Conn struct {
 	outbound          bool
 	closeOnce         sync.Once
 	finishedChannel   chan bool
+	onDisconnect      func()
+}
+
+func (c *Conn) OnDisconnect() func() {
+	return c.onDisconnect
 }
 
 func (c *Conn) FinishedChannel() chan bool {
@@ -56,7 +61,7 @@ func (c *Conn) RunningContext() context.Context {
 const EndOfMessage = "\r\n\r\n"
 
 // NewConnection exported constructor for alterative builds
-func NewConnection(c net.Conn, outbound bool) *Conn {
+func NewConnection(c net.Conn, outbound bool, onDisconnect func()) *Conn {
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)
 
@@ -79,9 +84,10 @@ func NewConnection(c net.Conn, outbound bool) *Conn {
 		stopFunc:       stop,
 		eventListeners: make(map[string]map[string]EventListener),
 		outbound:       outbound,
+		onDisconnect:   onDisconnect,
 	}
 	go instance.receiveLoop()
-	go instance.eventLoop()
+	//go instance.eventLoop()
 	return instance
 }
 
@@ -212,59 +218,59 @@ func (c *Conn) callEventListener(event *Event) {
 	}
 }
 
-func (c *Conn) eventLoop() {
-	for {
-		var event *Event
-		var err error
-		c.responseChanMutex.RLock()
-		select {
-		case raw := <-c.responseChannels[TypeEventPlain]:
-			if raw == nil {
-				if c.FinishedChannel() != nil {
-					c.FinishedChannel() <- true
-				}
-				// We only get nil here if the channel is closed
-				c.responseChanMutex.RUnlock()
-				return
-			}
-			event, err = readPlainEvent(raw.Body)
-		case raw := <-c.responseChannels[TypeEventXML]:
-			if raw == nil {
-				if c.FinishedChannel() != nil {
-					c.FinishedChannel() <- true
-				}
-				// We only get nil here if the channel is closed
-				c.responseChanMutex.RUnlock()
-				return
-			}
-			event, err = readXMLEvent(raw.Body)
-		case raw := <-c.responseChannels[TypeEventJSON]:
-			if raw == nil {
-				if c.FinishedChannel() != nil {
-					c.FinishedChannel() <- true
-				}
-				// We only get nil here if the channel is closed
-				c.responseChanMutex.RUnlock()
-				return
-			}
-			event, err = readJSONEvent(raw.Body)
-		case <-c.runningContext.Done():
-			if c.FinishedChannel() != nil {
-				c.FinishedChannel() <- true
-			}
-			c.responseChanMutex.RUnlock()
-			return
-		}
-		c.responseChanMutex.RUnlock()
-
-		if err != nil {
-			log.Printf("Error parsing event\n%s\n", err.Error())
-			continue
-		}
-
-		c.callEventListener(event)
-	}
-}
+//func (c *Conn) eventLoop() {
+//	for {
+//		var event *Event
+//		var err error
+//		c.responseChanMutex.RLock()
+//		select {
+//		case raw := <-c.responseChannels[TypeEventPlain]:
+//			if raw == nil {
+//				if c.FinishedChannel() != nil {
+//					c.FinishedChannel() <- true
+//				}
+//				// We only get nil here if the channel is closed
+//				c.responseChanMutex.RUnlock()
+//				return
+//			}
+//			event, err = readPlainEvent(raw.Body)
+//		case raw := <-c.responseChannels[TypeEventXML]:
+//			if raw == nil {
+//				if c.FinishedChannel() != nil {
+//					c.FinishedChannel() <- true
+//				}
+//				// We only get nil here if the channel is closed
+//				c.responseChanMutex.RUnlock()
+//				return
+//			}
+//			event, err = readXMLEvent(raw.Body)
+//		case raw := <-c.responseChannels[TypeEventJSON]:
+//			if raw == nil {
+//				if c.FinishedChannel() != nil {
+//					c.FinishedChannel() <- true
+//				}
+//				// We only get nil here if the channel is closed
+//				c.responseChanMutex.RUnlock()
+//				return
+//			}
+//			event, err = readJSONEvent(raw.Body)
+//		case <-c.runningContext.Done():
+//			if c.FinishedChannel() != nil {
+//				c.FinishedChannel() <- true
+//			}
+//			c.responseChanMutex.RUnlock()
+//			return
+//		}
+//		c.responseChanMutex.RUnlock()
+//
+//		if err != nil {
+//			log.Printf("Error parsing event\n%s\n", err.Error())
+//			continue
+//		}
+//
+//		c.callEventListener(event)
+//	}
+//}
 
 func (c *Conn) receiveLoop() {
 	for c.runningContext.Err() == nil {
@@ -272,31 +278,48 @@ func (c *Conn) receiveLoop() {
 		if err != nil {
 			return
 		}
-		c.responseChanMutex.RLock()
-		responseChan, ok := c.responseChannels[response.GetHeader("Content-Type")]
-		if !ok && len(c.responseChannels) <= 0 {
+		var event *Event
+		switch response.GetHeader("Content-Type") {
+		case TypeEventPlain:
+			event, err = readPlainEvent(response.Body)
+		case TypeEventXML:
+			event, err = readXMLEvent(response.Body)
+		case TypeEventJSON:
+			event, err = readJSONEvent(response.Body)
+		case TypeDisconnect:
+			c.OnDisconnect()
 			return
 		}
-
-		// We have a handler
-		if ok {
-			// Only allow 5 seconds to allow the handler to receive hte message on the channel
-			ctx, cancel := context.WithTimeout(c.runningContext, 1*time.Second)
-			defer cancel()
-
-			select {
-			case responseChan <- response:
-			case <-c.runningContext.Done():
-				// Parent connection context has stopped we most likely shutdown in the middle of waiting for a handler to handle the message
-				return
-			case <-ctx.Done():
-				// Do not return an error since this is not fatal but log since it could be a indication of problems
-				log.Printf("No one to handle response\nIs the connection overloaded or stopping?\n%v\n\n", response)
-				c.stopFunc()
-			}
-		} else {
-			return
+		if err != nil {
+			log.Printf("Error parsing event\n%s\n", err.Error())
+			continue
 		}
-		c.responseChanMutex.RUnlock()
+		c.callEventListener(event)
+		//c.responseChanMutex.RLock()
+		//responseChan, ok := c.responseChannels[response.GetHeader("Content-Type")]
+		//if !ok && len(c.responseChannels) <= 0 {
+		//	return
+		//}
+		//
+		//// We have a handler
+		//if ok {
+		//	// Only allow 5 seconds to allow the handler to receive hte message on the channel
+		//	ctx, cancel := context.WithTimeout(c.runningContext, 1*time.Second)
+		//	defer cancel()
+		//
+		//	select {
+		//	case responseChan <- response:
+		//	case <-c.runningContext.Done():
+		//		// Parent connection context has stopped we most likely shutdown in the middle of waiting for a handler to handle the message
+		//		return
+		//	case <-ctx.Done():
+		//		// Do not return an error since this is not fatal but log since it could be a indication of problems
+		//		log.Printf("No one to handle response\nIs the connection overloaded or stopping?\n%v\n\n", response)
+		//		return
+		//	}
+		//} else {
+		//	return
+		//}
+		//c.responseChanMutex.RUnlock()
 	}
 }
