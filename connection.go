@@ -287,12 +287,22 @@ func (c *Conn) receiveLoop() {
 		case TypeEventJSON:
 			event, err = readJSONEvent(response.Body)
 		case TypeDisconnect:
+			if c.FinishedChannel() != nil {
+				c.FinishedChannel() <- true
+			}
 			c.OnDisconnect()
 			return
 		}
 		if err != nil {
 			log.Printf("Error parsing event\n%s\n", err.Error())
 			continue
+		}
+		if event == nil {
+			if c.FinishedChannel() != nil {
+				c.FinishedChannel() <- true
+			}
+			log.Println("Event is empty, channel is closed")
+			return
 		}
 		c.callEventListener(event)
 		//c.responseChanMutex.RLock()
