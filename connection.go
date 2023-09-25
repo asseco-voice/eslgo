@@ -292,6 +292,8 @@ func (c *Conn) receiveLoop() {
 			}
 			c.OnDisconnect()
 			return
+		default:
+			log.Printf("Event not hitting any type %v", response.Headers)
 		}
 		if err != nil {
 			log.Printf("Error parsing event\n%s\n", err.Error())
