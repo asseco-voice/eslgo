@@ -281,7 +281,7 @@ func (c *Conn) receiveLoop() {
 		// We have a handler
 		if ok {
 			// Only allow 5 seconds to allow the handler to receive hte message on the channel
-			ctx, cancel := context.WithTimeout(c.runningContext, 1*time.Second)
+			ctx, cancel := context.WithTimeout(c.runningContext, 5*time.Second)
 			defer cancel()
 
 			select {
