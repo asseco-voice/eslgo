@@ -55,6 +55,7 @@ func (c *Conn) authLoop(auth command.Auth) {
 }
 
 func (c *Conn) doAuth(ctx context.Context, auth command.Auth) error {
+	log.Println("Authorizing ....")
 	response, err := c.SendCommand(ctx, auth)
 	if err != nil {
 		return err

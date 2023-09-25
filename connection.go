@@ -286,9 +286,10 @@ func (c *Conn) receiveLoop() {
 		var event *Event
 		switch response.GetHeader("Content-Type") {
 		case TypeAuthRequest:
+			log.Println("Authorizing request .... ")
 			err = c.doAuth(c.runningContext, command.Auth{Password: c.password})
 			if err != nil {
-				log.Printf("Failed to auth %e\n", err)
+				log.Printf("Failed to authorize %e\n", err)
 				// Close the connection, we have the wrong password
 				c.authenticated <- err
 				c.ExitAndClose()
