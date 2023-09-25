@@ -323,7 +323,7 @@ func (c *Conn) receiveLoop() {
 				c.FinishedChannel() <- true
 			}
 			log.Println("Event is empty, channel is closed")
-			return
+			continue
 		}
 		c.callEventListener(event)
 		//c.responseChanMutex.RLock()
