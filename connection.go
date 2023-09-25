@@ -32,7 +32,6 @@ type Conn struct {
 	writeLock          sync.Mutex
 	runningContext     context.Context
 	stopFunc           func()
-	responseChanMutex  sync.RWMutex
 	eventListenerLock  sync.RWMutex
 	eventListeners     map[string]map[string]EventListener
 	outbound           bool
@@ -127,9 +126,6 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 		return nil, err
 	}
 
-	// Get response
-	c.responseChanMutex.RLock()
-	defer c.responseChanMutex.RUnlock()
 	select {
 	case response := <-c.replyChannel:
 		if response == nil {
@@ -165,8 +161,6 @@ func (c *Conn) Close() {
 func (c *Conn) close() {
 	// Allow users to do anything they need to do before we tear everything down
 	c.stopFunc()
-	c.responseChanMutex.Lock()
-	defer c.responseChanMutex.Unlock()
 	close(c.authenticated)
 	close(c.replyChannel)
 	close(c.apiResponseChannel)
