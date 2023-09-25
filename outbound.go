@@ -68,7 +68,9 @@ func ListenAndServe(address string, handler OutboundHandler, opts *Options) erro
 		}
 
 		log.Printf("New outbound connection from %s\n", c.RemoteAddr().String())
-		conn := NewConnection(c, true)
+		conn := NewConnection(c, true, func() {
+			log.Printf("Connection disconnected")
+		})
 		//go conn.dummyLoop()
 		// Does not call the handler directly to ensure closing cleanly
 		go conn.outboundHandle(handler, opts)

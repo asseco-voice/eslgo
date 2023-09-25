@@ -11,6 +11,7 @@
 package eslgo
 
 import (
+	"log"
 	"net"
 	"sync"
 	"testing"
@@ -22,7 +23,9 @@ const TestEventToSend = "Content-Length: 483\r\nContent-Type: text/event-plain\r
 
 func TestEvent_readPlainEvent(t *testing.T) {
 	server, client := net.Pipe()
-	connection := NewConnection(client, false)
+	connection := NewConnection(client, false, func() {
+		log.Println("Connection disconnected")
+	})
 	defer connection.Close()
 	defer server.Close()
 	defer client.Close()

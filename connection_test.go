@@ -13,6 +13,7 @@ package eslgo
 import (
 	"bufio"
 	"context"
+	"log"
 	"net"
 	"sync"
 	"testing"
@@ -24,7 +25,9 @@ import (
 
 func TestConn_SendCommand(t *testing.T) {
 	server, client := net.Pipe()
-	connection := NewConnection(client, false)
+	connection := NewConnection(client, false, func() {
+		log.Println("Connection disconnected")
+	})
 	defer connection.Close()
 	defer server.Close()
 	defer client.Close()
