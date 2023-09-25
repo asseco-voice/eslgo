@@ -35,25 +35,6 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 	return connection, nil
 }
 
-func (c *Conn) authLoop(auth command.Auth) {
-	for {
-		select {
-		case <-c.responseChannels[TypeAuthRequest]:
-			err := c.doAuth(c.runningContext, auth)
-			if err != nil {
-				log.Printf("Failed to auth %e\n", err)
-				// Close the connection, we have the wrong password
-				c.ExitAndClose()
-				return
-			} else {
-				log.Printf("Sucessfully authenticated %s\n", c.conn.RemoteAddr())
-			}
-		case <-c.runningContext.Done():
-			return
-		}
-	}
-}
-
 func (c *Conn) doAuth(ctx context.Context, auth command.Auth) error {
 	log.Println("Authorizing ....")
 	response, err := c.SendCommand(ctx, auth)
