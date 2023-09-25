@@ -287,17 +287,19 @@ func (c *Conn) receiveLoop() {
 		switch response.GetHeader("Content-Type") {
 		case TypeAuthRequest:
 			log.Println("Authorizing request .... ")
-			err = c.doAuth(c.runningContext, command.Auth{Password: c.password})
-			if err != nil {
-				log.Printf("Failed to authorize %e\n", err)
-				// Close the connection, we have the wrong password
-				c.authenticated <- err
-				c.ExitAndClose()
-				return
-			} else {
-				log.Printf("Sucessfully authenticated %s\n", c.conn.RemoteAddr())
-				c.authenticated <- nil
-			}
+			go func(conn *Conn) {
+				err = c.doAuth(c.runningContext, command.Auth{Password: c.password})
+				if err != nil {
+					log.Printf("Failed to authorize %e\n", err)
+					// Close the connection, we have the wrong password
+					c.authenticated <- err
+					c.ExitAndClose()
+					return
+				} else {
+					log.Printf("Sucessfully authenticated %s\n", c.conn.RemoteAddr())
+					c.authenticated <- nil
+				}
+			}(c)
 		case TypeEventPlain:
 			event, err = readPlainEvent(response.Body)
 		case TypeEventXML:
