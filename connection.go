@@ -26,23 +26,24 @@ import (
 
 /*Conn ...*/
 type Conn struct {
-	conn              net.Conn
-	reader            *bufio.Reader
-	header            *textproto.Reader
-	writeLock         sync.Mutex
-	runningContext    context.Context
-	stopFunc          func()
-	responseChannels  map[string]chan *RawResponse
-	responseChanMutex sync.RWMutex
-	eventListenerLock sync.RWMutex
-	eventListeners    map[string]map[string]EventListener
-	outbound          bool
-	closeOnce         sync.Once
-	finishedChannel   chan bool
-	onDisconnect      func()
-	address           string
-	password          string
-	authenticated     chan error
+	conn               net.Conn
+	reader             *bufio.Reader
+	header             *textproto.Reader
+	writeLock          sync.Mutex
+	runningContext     context.Context
+	stopFunc           func()
+	responseChanMutex  sync.RWMutex
+	eventListenerLock  sync.RWMutex
+	eventListeners     map[string]map[string]EventListener
+	outbound           bool
+	closeOnce          sync.Once
+	finishedChannel    chan bool
+	onDisconnect       func()
+	address            string
+	password           string
+	authenticated      chan error
+	replyChannel       chan *RawResponse
+	apiResponseChannel chan *RawResponse
 }
 
 func (c *Conn) OnDisconnect() func() {
@@ -71,23 +72,15 @@ func NewConnection(c net.Conn, outbound bool, onDisconnect func(), address, pass
 	runningContext, stop := context.WithCancel(context.Background())
 
 	instance := &Conn{
-		conn:   c,
-		reader: reader,
-		header: header,
-		responseChannels: map[string]chan *RawResponse{
-			TypeReply:       make(chan *RawResponse),
-			TypeAPIResponse: make(chan *RawResponse),
-			TypeEventPlain:  make(chan *RawResponse),
-			TypeEventXML:    make(chan *RawResponse),
-			TypeEventJSON:   make(chan *RawResponse),
-			TypeAuthRequest: make(chan *RawResponse, 1), // Buffered to ensure we do not lose the initial auth request before we are setup to respond
-			TypeDisconnect:  make(chan *RawResponse),
-		},
+		conn:           c,
+		reader:         reader,
+		header:         header,
 		runningContext: runningContext,
 		stopFunc:       stop,
 		eventListeners: make(map[string]map[string]EventListener),
 		outbound:       outbound,
 		onDisconnect:   onDisconnect,
+		authenticated:  make(chan error),
 		address:        address,
 		password:       password,
 	}
@@ -136,13 +129,13 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 	c.responseChanMutex.RLock()
 	defer c.responseChanMutex.RUnlock()
 	select {
-	case response := <-c.responseChannels[TypeReply]:
+	case response := <-c.replyChannel:
 		if response == nil {
 			// We only get nil here if the channel is closed
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
-	case response := <-c.responseChannels[TypeAPIResponse]:
+	case response := <-c.apiResponseChannel:
 		if response == nil {
 			// We only get nil here if the channel is closed
 			return nil, errors.New("connection closed")
@@ -172,11 +165,9 @@ func (c *Conn) close() {
 	c.stopFunc()
 	c.responseChanMutex.Lock()
 	defer c.responseChanMutex.Unlock()
-	for key, responseChan := range c.responseChannels {
-		close(responseChan)
-		delete(c.responseChannels, key)
-	}
-
+	close(c.authenticated)
+	close(c.replyChannel)
+	close(c.apiResponseChannel)
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
 	_ = c.conn.Close()
 }
@@ -312,6 +303,11 @@ func (c *Conn) receiveLoop() {
 			}
 			c.OnDisconnect()
 			return
+		case TypeReply:
+			c.replyChannel <- response
+			continue
+		case TypeAPIResponse:
+			c.apiResponseChannel <- response
 		default:
 			log.Printf("Event not hitting any type %v", response.Headers)
 			continue
