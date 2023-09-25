@@ -72,17 +72,19 @@ func NewConnection(c net.Conn, outbound bool, onDisconnect func(), address, pass
 	runningContext, stop := context.WithCancel(context.Background())
 
 	instance := &Conn{
-		conn:           c,
-		reader:         reader,
-		header:         header,
-		runningContext: runningContext,
-		stopFunc:       stop,
-		eventListeners: make(map[string]map[string]EventListener),
-		outbound:       outbound,
-		onDisconnect:   onDisconnect,
-		authenticated:  make(chan error),
-		address:        address,
-		password:       password,
+		conn:               c,
+		reader:             reader,
+		header:             header,
+		runningContext:     runningContext,
+		stopFunc:           stop,
+		eventListeners:     make(map[string]map[string]EventListener),
+		outbound:           outbound,
+		onDisconnect:       onDisconnect,
+		authenticated:      make(chan error),
+		replyChannel:       make(chan *RawResponse),
+		apiResponseChannel: make(chan *RawResponse),
+		address:            address,
+		password:           password,
 	}
 	go instance.receiveLoop()
 	//go instance.eventLoop()
