@@ -43,7 +43,7 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 
 	// Inbound only handlers
 	go connection.authLoop(command.Auth{Password: password})
-	go connection.disconnectLoop(onDisconnect)
+	//go connection.disconnectLoop(onDisconnect)
 
 	return connection, nil
 }

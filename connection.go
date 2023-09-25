@@ -167,7 +167,9 @@ func (c *Conn) close() {
 	}
 
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
-	_ = c.conn.Close()
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
 }
 
 func (c *Conn) callEventListener(event *Event) {
@@ -248,6 +250,10 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readJSONEvent(raw.Body)
+		case <-c.responseChannels[TypeDisconnect]:
+			log.Println("disconnect event")
+			c.Close()
+			return
 		case <-c.runningContext.Done():
 			if c.FinishedChannel() != nil {
 				c.FinishedChannel() <- true
@@ -292,7 +298,7 @@ func (c *Conn) receiveLoop() {
 			case <-ctx.Done():
 				// Do not return an error since this is not fatal but log since it could be a indication of problems
 				log.Printf("No one to handle response\nIs the connection overloaded or stopping?\n%v\n\n", response)
-				c.stopFunc()
+				continue
 			}
 		} else {
 			return
