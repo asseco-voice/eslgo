@@ -40,6 +40,8 @@ type Conn struct {
 	closeOnce         sync.Once
 	finishedChannel   chan bool
 	onDisconnect      func()
+	address           string
+	password          string
 }
 
 func (c *Conn) OnDisconnect() func() {
@@ -61,7 +63,7 @@ func (c *Conn) RunningContext() context.Context {
 const EndOfMessage = "\r\n\r\n"
 
 // NewConnection exported constructor for alterative builds
-func NewConnection(c net.Conn, outbound bool, onDisconnect func()) *Conn {
+func NewConnection(c net.Conn, outbound bool, onDisconnect func(), address, password string) *Conn {
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)
 
@@ -85,6 +87,8 @@ func NewConnection(c net.Conn, outbound bool, onDisconnect func()) *Conn {
 		eventListeners: make(map[string]map[string]EventListener),
 		outbound:       outbound,
 		onDisconnect:   onDisconnect,
+		address:        address,
+		password:       password,
 	}
 	go instance.receiveLoop()
 	//go instance.eventLoop()
@@ -280,6 +284,16 @@ func (c *Conn) receiveLoop() {
 		}
 		var event *Event
 		switch response.GetHeader("Content-Type") {
+		case TypeAuthRequest:
+			err = c.doAuth(c.runningContext, command.Auth{Password: c.password})
+			if err != nil {
+				log.Printf("Failed to auth %e\n", err)
+				// Close the connection, we have the wrong password
+				c.ExitAndClose()
+				return
+			} else {
+				log.Printf("Sucessfully authenticated %s\n", c.conn.RemoteAddr())
+			}
 		case TypeEventPlain:
 			event, err = readPlainEvent(response.Body)
 		case TypeEventXML:

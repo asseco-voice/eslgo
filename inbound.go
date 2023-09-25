@@ -25,7 +25,7 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 	if err != nil {
 		return nil, err
 	}
-	connection := NewConnection(c, false, onDisconnect)
+	connection := NewConnection(c, false, onDisconnect, address, password)
 
 	// First auth
 	<-connection.responseChannels[TypeAuthRequest]
@@ -40,9 +40,6 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 	} else {
 		log.Printf("Sucessfully authenticated %s\n", connection.conn.RemoteAddr())
 	}
-
-	// Inbound only handlers
-	go connection.authLoop(command.Auth{Password: password})
 
 	return connection, nil
 }
