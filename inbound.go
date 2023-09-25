@@ -28,19 +28,10 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 	connection := NewConnection(c, false, onDisconnect, address, password)
 
 	// First auth
-	<-connection.responseChannels[TypeAuthRequest]
-	err = connection.doAuth(connection.runningContext, command.Auth{Password: password})
+	err = <-connection.authenticated
 	if err != nil {
-		// Try to gracefully disconnect, we have the wrong password.
-		connection.ExitAndClose()
-		if onDisconnect != nil {
-			go onDisconnect()
-		}
 		return nil, err
-	} else {
-		log.Printf("Sucessfully authenticated %s\n", connection.conn.RemoteAddr())
 	}
-
 	return connection, nil
 }
 

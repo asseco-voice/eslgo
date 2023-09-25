@@ -42,6 +42,7 @@ type Conn struct {
 	onDisconnect      func()
 	address           string
 	password          string
+	authenticated     chan error
 }
 
 func (c *Conn) OnDisconnect() func() {
@@ -289,10 +290,12 @@ func (c *Conn) receiveLoop() {
 			if err != nil {
 				log.Printf("Failed to auth %e\n", err)
 				// Close the connection, we have the wrong password
+				c.authenticated <- err
 				c.ExitAndClose()
 				return
 			} else {
 				log.Printf("Sucessfully authenticated %s\n", c.conn.RemoteAddr())
+				c.authenticated <- nil
 			}
 		case TypeEventPlain:
 			event, err = readPlainEvent(response.Body)
