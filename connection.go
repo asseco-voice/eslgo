@@ -26,19 +26,28 @@ import (
 
 /*Conn ...*/
 type Conn struct {
-	conn              net.Conn
-	reader            *bufio.Reader
-	header            *textproto.Reader
-	writeLock         sync.Mutex
-	runningContext    context.Context
-	stopFunc          func()
-	responseChannels  map[string]chan *RawResponse
-	responseChanMutex sync.RWMutex
-	eventListenerLock sync.RWMutex
-	eventListeners    map[string]map[string]EventListener
-	outbound          bool
-	closeOnce         sync.Once
-	finishedChannel   chan bool
+	conn                net.Conn
+	reader              *bufio.Reader
+	header              *textproto.Reader
+	writeLock           sync.Mutex
+	runningContext      context.Context
+	stopFunc            func()
+	responseChannels    map[string]chan *RawResponse
+	responseChanMutex   sync.RWMutex
+	eventListenerLock   sync.RWMutex
+	eventListeners      map[string]map[string]EventListener
+	outbound            bool
+	closeOnce           sync.Once
+	finishedChannel     chan bool
+	disconnectedChannel chan bool
+}
+
+func (c *Conn) DisconnectedChannel() chan bool {
+	return c.disconnectedChannel
+}
+
+func (c *Conn) SetDisconnectedChannel(disconnectedChannel chan bool) {
+	c.disconnectedChannel = disconnectedChannel
 }
 
 func (c *Conn) FinishedChannel() chan bool {
@@ -265,6 +274,9 @@ func (c *Conn) eventLoop() {
 			log.Println("##### CLOSING CONNECTION #####")
 			c.Close()
 			log.Println("##### CONNECTION CLOSED #####")
+			if c.DisconnectedChannel() != nil {
+				c.DisconnectedChannel() <- true
+			}
 			return
 		case <-c.runningContext.Done():
 			if c.FinishedChannel() != nil {
