@@ -157,18 +157,28 @@ func (c *Conn) Close() {
 }
 
 func (c *Conn) close() {
+	log.Println("##### close ####")
 	// Allow users to do anything they need to do before we tear everything down
+	log.Println("#### STOP FUNC ####")
 	c.stopFunc()
+	log.Println("#### CLEARING RESPONSE CHANNELS ####")
 	c.responseChanMutex.Lock()
 	defer c.responseChanMutex.Unlock()
 	for key, responseChan := range c.responseChannels {
 		close(responseChan)
 		delete(c.responseChannels, key)
 	}
+	log.Println("#### RESPONSE CHANNELS CLEARED ####")
 
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
 	if c.conn != nil {
-		_ = c.conn.Close()
+		log.Println("#### CALLING CONNECTION CLOSE ####")
+		err := c.conn.Close()
+		if err != nil {
+			log.Printf("#### ERROR CLOSING CONNECTION %s ####", err.Error())
+			return
+		}
+		log.Println("#### CONNECTION CLOSED ####")
 	}
 }
 
@@ -250,9 +260,11 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readJSONEvent(raw.Body)
-		case <-c.responseChannels[TypeDisconnect]:
-			log.Println("disconnect event")
+		case raw := <-c.responseChannels[TypeDisconnect]:
+			log.Printf("##### Disconnect Event ##### \n%v", raw)
+			log.Println("##### CLOSING CONNECTION #####")
 			c.Close()
+			log.Println("##### CONNECTION CLOSED #####")
 			return
 		case <-c.runningContext.Done():
 			if c.FinishedChannel() != nil {
