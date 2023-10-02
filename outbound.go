@@ -13,6 +13,7 @@ package eslgo
 import (
 	"context"
 	"errors"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"log"
 	"net"
@@ -49,8 +50,9 @@ type Options struct {
 	// "udp", "udp4" (IPv4-only), "udp6" (IPv6-only), "ip", "ip4"
 	// (IPv4-only), "ip6" (IPv6-only), "unix", "unixgram" and
 	// "unixpacket".
-	Network string `json:"network"`
-	Logger  zerolog.Logger
+	Network      string `json:"network"`
+	Logger       zerolog.Logger
+	OnDisconnect func()
 }
 
 /*ListenAndServe start listener with given options */
@@ -70,7 +72,7 @@ func ListenAndServe(address string, handler OutboundHandler, opts *Options) erro
 			break
 		}
 		opts.Logger.Debug().Msgf("new outbound connection from %s", c.RemoteAddr().String())
-		conn := NewConnection(c, true, opts.Logger)
+		conn := NewConnection(c, true, opts.Logger, uuid.New().String(), opts.OnDisconnect)
 		//go conn.dummyLoop()
 		// Does not call the handler directly to ensure closing cleanly
 		go conn.outboundHandle(handler, opts)
@@ -80,7 +82,7 @@ func ListenAndServe(address string, handler OutboundHandler, opts *Options) erro
 }
 
 func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
-	c.logger.Debug().Msg("outboundHandle called")
+	c.logger.Debug().Msgf("[ID: %s] outboundHandle called", c.connectionId)
 	var ctx context.Context
 	var cancel context.CancelFunc
 	ctx = context.Background()
@@ -91,7 +93,7 @@ func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
 
 	response, err := c.SendCommand(ctx, command.Connect{})
 	if err != nil {
-		c.logger.Error().Err(err).Msgf("failed connecting to %s, calling close", c.conn.RemoteAddr().String())
+		c.logger.Error().Err(err).Msgf("[ID: %s] failed connecting to %s, calling close", c.connectionId, c.conn.RemoteAddr().String())
 		// Try closing cleanly first
 		c.Close() // Not ExitAndClose since this error connection is most likely from communication failure
 		return

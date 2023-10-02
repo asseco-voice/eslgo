@@ -13,6 +13,7 @@ package eslgo
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"log"
 	"net"
@@ -26,7 +27,7 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func(), 
 	if err != nil {
 		return nil, err
 	}
-	connection := NewConnection(c, false, logger)
+	connection := NewConnection(c, false, logger, uuid.New().String(), onDisconnect)
 
 	// First auth
 	<-connection.responseChannels[TypeAuthRequest]
@@ -44,25 +45,25 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func(), 
 
 	// Inbound only handlers
 	go connection.authLoop(command.Auth{Password: password})
-	go connection.disconnectLoop(onDisconnect)
+	//go connection.disconnectLoop()
 
 	return connection, nil
 }
 
-func (c *Conn) disconnectLoop(onDisconnect func()) {
-	select {
-	case <-c.responseChannels[TypeDisconnect]:
-		c.logger.Warn().Msg("connection disconnected")
-		c.Close()
-		if onDisconnect != nil {
-			onDisconnect()
-		}
-		return
-	case <-c.runningContext.Done():
-		c.logger.Warn().Msg("connection disconnected")
-		return
-	}
-}
+//func (c *Conn) disconnectLoop() {
+//	select {
+//	case <-c.responseChannels[TypeDisconnect]:
+//		c.logger.Warn().Msgf("[ID: %s] [disconnectLoop] connection disconnected", c.connectionId)
+//		c.Close()
+//		if c.onDisconnect != nil {
+//			c.onDisconnect()
+//		}
+//		return
+//	case <-c.runningContext.Done():
+//		c.logger.Warn().Msgf("[ID: %s] [disconnectLoop] connection running context ended", c.connectionId)
+//		return
+//	}
+//}
 
 func (c *Conn) authLoop(auth command.Auth) {
 	for {
