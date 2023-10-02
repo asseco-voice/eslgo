@@ -287,7 +287,9 @@ func (c *Conn) eventLoop() {
 			event, err = readJSONEvent(raw.Body)
 		case <-c.responseChannels[TypeDisconnect]:
 			c.logger.Warn().Msgf("[ID: %s][action_id: %s] connection disconnected", c.connectionId, eventLoopId)
-
+			if c.onDisconnect != nil {
+				c.onDisconnect(c.connectionId)
+			}
 			c.Close()
 			return
 		case <-c.runningContext.Done():
