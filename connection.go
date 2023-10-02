@@ -123,43 +123,43 @@ func (c *Conn) RemoveEventListener(channelUUID string, id string) {
 
 func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawResponse, error) {
 	commandId := uuid.New().String()
-	c.logger.Debug().Msgf("[%s] sending command %s", commandId, command.BuildMessage())
+	c.logger.Debug().Msgf("[ID: %s][action_id: %s] sending command %s", c.connectionId, commandId, command.BuildMessage())
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
 
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = c.conn.SetWriteDeadline(deadline)
 	}
-	c.logger.Debug().Msgf("[%s] writing to socket", commandId)
+	c.logger.Debug().Msgf("[ID: %s][action_id: %s] writing to socket", c.connectionId, commandId)
 	_, err := c.conn.Write([]byte(command.BuildMessage() + EndOfMessage))
 	if err != nil {
-		c.logger.Error().Err(err).Msgf("[%s] error writing to socket", commandId)
+		c.logger.Error().Err(err).Msgf("[ID: %s][action_id: %s] error writing to socket", c.connectionId, commandId)
 		return nil, err
 	}
 
 	// Get response
-	c.logger.Debug().Msgf("[%s] locking mutex and waiting for response", commandId)
+	c.logger.Debug().Msgf("[ID: %s][action_id: %s] locking mutex and waiting for response", c.connectionId, commandId)
 	c.responseChanMutex.RLock()
 	defer c.responseChanMutex.RUnlock()
 	select {
 	case response := <-c.responseChannels[TypeReply]:
-		c.logger.Debug().Msgf("[%s] command/reply", commandId)
+		c.logger.Debug().Msgf("[ID: %s][action_id: %s] command/reply", c.connectionId, commandId)
 		if response == nil {
-			c.logger.Error().Msgf("[%s] connection closed", commandId)
+			c.logger.Error().Msgf("[ID: %s][action_id: %s] connection closed", c.connectionId, commandId)
 			// We only get nil here if the channel is closed
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
 	case response := <-c.responseChannels[TypeAPIResponse]:
-		c.logger.Debug().Msgf("[%s] api/response", commandId)
+		c.logger.Debug().Msgf("[ID: %s][action_id: %s] api/response", c.connectionId, commandId)
 		if response == nil {
-			c.logger.Error().Msgf("[%s] connection closed", commandId)
+			c.logger.Error().Msgf("[ID: %s][action_id: %s] connection closed", c.connectionId, commandId)
 			// We only get nil here if the channel is closed
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
 	case <-ctx.Done():
-		c.logger.Error().Err(ctx.Err()).Msgf("[%s] context done", commandId)
+		c.logger.Error().Err(ctx.Err()).Msgf("[ID: %s][action_id: %s] context done", c.connectionId, commandId)
 		return nil, ctx.Err()
 	}
 }
