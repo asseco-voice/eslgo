@@ -32,10 +32,11 @@ const (
 
 type OutboundHandler func(ctx context.Context, conn *Conn, connectResponse *RawResponse)
 
-func NewOptions(network string, timout time.Duration) *Options {
+func NewOptions(network string, timout time.Duration, logger zerolog.Logger) *Options {
 	return &Options{
 		Network: network,
 		Timeout: timout,
+		Logger:  logger,
 	}
 }
 
