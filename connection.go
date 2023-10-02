@@ -41,7 +41,7 @@ type Conn struct {
 	finishedChannel   chan bool
 	logger            zerolog.Logger
 	connectionId      string
-	onDisconnect      func()
+	onDisconnect      func(string)
 }
 
 func (c *Conn) ConnectionId() string {
@@ -63,7 +63,7 @@ func (c *Conn) RunningContext() context.Context {
 const EndOfMessage = "\r\n\r\n"
 
 // NewConnection exported constructor for alterative builds
-func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger, connectionId string, onDisconnect func()) *Conn {
+func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger, connectionId string, onDisconnect func(string)) *Conn {
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)
 
@@ -287,6 +287,9 @@ func (c *Conn) eventLoop() {
 			event, err = readJSONEvent(raw.Body)
 		case <-c.responseChannels[TypeDisconnect]:
 			c.logger.Warn().Msgf("[ID: %s][action_id: %s] connection disconnected", c.connectionId, eventLoopId)
+			if c.onDisconnect != nil {
+				c.onDisconnect(c.connectionId)
+			}
 			c.Close()
 			return
 		case <-c.runningContext.Done():

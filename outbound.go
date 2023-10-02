@@ -33,11 +33,12 @@ const (
 
 type OutboundHandler func(ctx context.Context, conn *Conn, connectResponse *RawResponse)
 
-func NewOptions(network string, timout time.Duration, logger zerolog.Logger) *Options {
+func NewOptions(network string, timout time.Duration, logger zerolog.Logger, onDisconnect func(string)) *Options {
 	return &Options{
-		Network: network,
-		Timeout: timout,
-		Logger:  logger,
+		Network:      network,
+		Timeout:      timout,
+		Logger:       logger,
+		OnDisconnect: onDisconnect,
 	}
 }
 
@@ -52,7 +53,7 @@ type Options struct {
 	// "unixpacket".
 	Network      string `json:"network"`
 	Logger       zerolog.Logger
-	OnDisconnect func()
+	OnDisconnect func(string)
 }
 
 /*ListenAndServe start listener with given options */

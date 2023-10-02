@@ -22,7 +22,7 @@ import (
 	"github.com/AkronimBlack/eslgo/command"
 )
 
-func Dial(address, password string, timeout time.Duration, onDisconnect func(), logger zerolog.Logger) (*Conn, error) {
+func Dial(address, password string, timeout time.Duration, onDisconnect func(string), logger zerolog.Logger) (*Conn, error) {
 	c, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return nil, err
@@ -35,9 +35,6 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func(), 
 	if err != nil {
 		// Try to gracefully disconnect, we have the wrong password.
 		connection.ExitAndClose()
-		if onDisconnect != nil {
-			go onDisconnect()
-		}
 		return nil, err
 	} else {
 		log.Printf("Sucessfully authenticated %s\n", connection.conn.RemoteAddr())
