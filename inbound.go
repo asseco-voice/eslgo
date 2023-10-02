@@ -13,6 +13,7 @@ package eslgo
 import (
 	"context"
 	"fmt"
+	"github.com/rs/zerolog"
 	"log"
 	"net"
 	"time"
@@ -20,12 +21,12 @@ import (
 	"github.com/AkronimBlack/eslgo/command"
 )
 
-func Dial(address, password string, timeout time.Duration, onDisconnect func()) (*Conn, error) {
+func Dial(address, password string, timeout time.Duration, onDisconnect func(), logger zerolog.Logger) (*Conn, error) {
 	c, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return nil, err
 	}
-	connection := NewConnection(c, false)
+	connection := NewConnection(c, false, logger)
 
 	// First auth
 	<-connection.responseChannels[TypeAuthRequest]
@@ -51,12 +52,14 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func()) 
 func (c *Conn) disconnectLoop(onDisconnect func()) {
 	select {
 	case <-c.responseChannels[TypeDisconnect]:
+		c.logger.Warn().Msg("connection disconnected")
 		c.Close()
 		if onDisconnect != nil {
 			onDisconnect()
 		}
 		return
 	case <-c.runningContext.Done():
+		c.logger.Warn().Msg("connection disconnected")
 		return
 	}
 }
@@ -67,20 +70,22 @@ func (c *Conn) authLoop(auth command.Auth) {
 		case <-c.responseChannels[TypeAuthRequest]:
 			err := c.doAuth(c.runningContext, auth)
 			if err != nil {
-				log.Printf("Failed to auth %e\n", err)
+				c.logger.Error().Err(err).Msgf("failed to authenticate")
 				// Close the connection, we have the wrong password
 				c.ExitAndClose()
 				return
 			} else {
-				log.Printf("Sucessfully authenticated %s\n", c.conn.RemoteAddr())
+				c.logger.Debug().Msgf("successfully authenticated %s\n", c.conn.RemoteAddr())
 			}
 		case <-c.runningContext.Done():
+			c.logger.Warn().Err(c.runningContext.Err()).Msgf("context done in auth loop")
 			return
 		}
 	}
 }
 
 func (c *Conn) doAuth(ctx context.Context, auth command.Auth) error {
+	c.logger.Debug().Msg("running authentication")
 	response, err := c.SendCommand(ctx, auth)
 	if err != nil {
 		return err

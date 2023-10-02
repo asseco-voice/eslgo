@@ -13,6 +13,7 @@ package eslgo
 import (
 	"context"
 	"errors"
+	"github.com/rs/zerolog"
 	"log"
 	"net"
 	"time"
@@ -48,6 +49,7 @@ type Options struct {
 	// (IPv4-only), "ip6" (IPv6-only), "unix", "unixgram" and
 	// "unixpacket".
 	Network string `json:"network"`
+	Logger  zerolog.Logger
 }
 
 /*ListenAndServe start listener with given options */
@@ -60,24 +62,24 @@ func ListenAndServe(address string, handler OutboundHandler, opts *Options) erro
 	if err != nil {
 		return err
 	}
-	log.Printf("Listenting for new ESL connections on %s\n", listener.Addr().String())
+	opts.Logger.Debug().Msgf("listening for new ESL connections on %s", listener.Addr().String())
 	for {
 		c, err := listener.Accept()
 		if err != nil {
 			break
 		}
-
-		log.Printf("New outbound connection from %s\n", c.RemoteAddr().String())
-		conn := NewConnection(c, true)
+		opts.Logger.Debug().Msgf("new outbound connection from %s", c.RemoteAddr().String())
+		conn := NewConnection(c, true, opts.Logger)
 		//go conn.dummyLoop()
 		// Does not call the handler directly to ensure closing cleanly
 		go conn.outboundHandle(handler, opts)
 	}
-	log.Println("Outbound server shutting down")
+	opts.Logger.Warn().Msg("ListenAndServe server shutting down")
 	return errors.New("connection closed")
 }
 
 func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
+	c.logger.Debug().Msg("outboundHandle called")
 	var ctx context.Context
 	var cancel context.CancelFunc
 	ctx = context.Background()
@@ -88,7 +90,7 @@ func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
 
 	response, err := c.SendCommand(ctx, command.Connect{})
 	if err != nil {
-		log.Printf("Error connecting to %s error %s", c.conn.RemoteAddr().String(), err.Error())
+		c.logger.Error().Err(err).Msgf("failed connecting to %s, calling close", c.conn.RemoteAddr().String())
 		// Try closing cleanly first
 		c.Close() // Not ExitAndClose since this error connection is most likely from communication failure
 		return

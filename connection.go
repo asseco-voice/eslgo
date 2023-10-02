@@ -14,7 +14,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"log"
+	"github.com/rs/zerolog"
 	"net"
 	"net/textproto"
 	"sync"
@@ -39,6 +39,7 @@ type Conn struct {
 	outbound          bool
 	closeOnce         sync.Once
 	finishedChannel   chan bool
+	logger            zerolog.Logger
 }
 
 func (c *Conn) FinishedChannel() chan bool {
@@ -56,7 +57,7 @@ func (c *Conn) RunningContext() context.Context {
 const EndOfMessage = "\r\n\r\n"
 
 // NewConnection exported constructor for alterative builds
-func NewConnection(c net.Conn, outbound bool) *Conn {
+func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger) *Conn {
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)
 
@@ -79,6 +80,7 @@ func NewConnection(c net.Conn, outbound bool) *Conn {
 		stopFunc:       stop,
 		eventListeners: make(map[string]map[string]EventListener),
 		outbound:       outbound,
+		logger:         logger,
 	}
 	go instance.receiveLoop()
 	go instance.eventLoop()
@@ -91,6 +93,7 @@ func (c *Conn) RegisterEventListener(channelUUID string, listener EventListener)
 	defer c.eventListenerLock.Unlock()
 
 	id := uuid.New().String()
+	c.logger.Debug().Msgf("registering listener for %s with id ", channelUUID, id)
 	if _, ok := c.eventListeners[channelUUID]; ok {
 		c.eventListeners[channelUUID][id] = listener
 	} else {
@@ -101,6 +104,7 @@ func (c *Conn) RegisterEventListener(channelUUID string, listener EventListener)
 
 /*RemoveEventListener .. */
 func (c *Conn) RemoveEventListener(channelUUID string, id string) {
+	c.logger.Debug().Msgf("removing listener for %s", channelUUID)
 	c.eventListenerLock.Lock()
 	defer c.eventListenerLock.Unlock()
 
@@ -110,42 +114,54 @@ func (c *Conn) RemoveEventListener(channelUUID string, id string) {
 }
 
 func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawResponse, error) {
+	commandId := uuid.New().String()
+	c.logger.Debug().Msgf("[%s] sending command %s", commandId, command.BuildMessage())
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
 
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = c.conn.SetWriteDeadline(deadline)
 	}
+	c.logger.Debug().Msgf("[%s] writing to socket", commandId)
 	_, err := c.conn.Write([]byte(command.BuildMessage() + EndOfMessage))
 	if err != nil {
+		c.logger.Error().Err(err).Msgf("[%s] error writing to socket", commandId)
 		return nil, err
 	}
 
 	// Get response
+	c.logger.Debug().Msgf("[%s] locking mutex and waiting for response", commandId)
 	c.responseChanMutex.RLock()
 	defer c.responseChanMutex.RUnlock()
 	select {
 	case response := <-c.responseChannels[TypeReply]:
+		c.logger.Debug().Msgf("[%s] command/reply", commandId)
 		if response == nil {
+			c.logger.Error().Msgf("[%s] connection closed", commandId)
 			// We only get nil here if the channel is closed
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
 	case response := <-c.responseChannels[TypeAPIResponse]:
+		c.logger.Debug().Msgf("[%s] api/response", commandId)
 		if response == nil {
+			c.logger.Error().Msgf("[%s] connection closed", commandId)
 			// We only get nil here if the channel is closed
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
 	case <-ctx.Done():
+		c.logger.Error().Err(ctx.Err()).Msgf("[%s] context done", commandId)
 		return nil, ctx.Err()
 	}
 }
 
 func (c *Conn) ExitAndClose() {
+	c.logger.Debug().Msg("ExitAndClose")
 	c.closeOnce.Do(func() {
 		// Attempt a graceful closing of the connection with FreeSWITCH
 		ctx, cancel := context.WithTimeout(c.runningContext, time.Second)
+		c.logger.Debug().Msg("sending exit command")
 		_, _ = c.SendCommand(ctx, command.Exit{})
 		cancel()
 		c.close()
@@ -157,16 +173,21 @@ func (c *Conn) Close() {
 }
 
 func (c *Conn) close() {
+	c.logger.Debug().Msg("close")
 	// Allow users to do anything they need to do before we tear everything down
+	c.logger.Debug().Msg("stopFunc")
 	c.stopFunc()
+	c.logger.Debug().Msg("locking mutex")
 	c.responseChanMutex.Lock()
 	defer c.responseChanMutex.Unlock()
 	for key, responseChan := range c.responseChannels {
+		c.logger.Debug().Msgf("removing channel %s", key)
 		close(responseChan)
 		delete(c.responseChannels, key)
 	}
 
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
+	c.logger.Debug().Msg("closing connection")
 	_ = c.conn.Close()
 }
 
@@ -213,6 +234,8 @@ func (c *Conn) callEventListener(event *Event) {
 }
 
 func (c *Conn) eventLoop() {
+	eventLoopId := uuid.New().String()
+	c.logger.Debug().Msgf("[%s] starting event loop", eventLoopId)
 	for {
 		var event *Event
 		var err error
@@ -220,6 +243,7 @@ func (c *Conn) eventLoop() {
 		select {
 		case raw := <-c.responseChannels[TypeEventPlain]:
 			if raw == nil {
+				c.logger.Debug().Msgf("[%s] event %s", TypeEventPlain, eventLoopId)
 				if c.FinishedChannel() != nil {
 					c.FinishedChannel() <- true
 				}
@@ -229,6 +253,7 @@ func (c *Conn) eventLoop() {
 			}
 			event, err = readPlainEvent(raw.Body)
 		case raw := <-c.responseChannels[TypeEventXML]:
+			c.logger.Debug().Msgf("[%s] event %s", TypeEventXML, eventLoopId)
 			if raw == nil {
 				if c.FinishedChannel() != nil {
 					c.FinishedChannel() <- true
@@ -239,6 +264,7 @@ func (c *Conn) eventLoop() {
 			}
 			event, err = readXMLEvent(raw.Body)
 		case raw := <-c.responseChannels[TypeEventJSON]:
+			c.logger.Debug().Msgf("[%s] event %s", TypeEventJSON, eventLoopId)
 			if raw == nil {
 				if c.FinishedChannel() != nil {
 					c.FinishedChannel() <- true
@@ -249,6 +275,7 @@ func (c *Conn) eventLoop() {
 			}
 			event, err = readJSONEvent(raw.Body)
 		case <-c.runningContext.Done():
+			c.logger.Debug().Msgf("[%s] running context done", eventLoopId)
 			if c.FinishedChannel() != nil {
 				c.FinishedChannel() <- true
 			}
@@ -258,7 +285,7 @@ func (c *Conn) eventLoop() {
 		c.responseChanMutex.RUnlock()
 
 		if err != nil {
-			log.Printf("Error parsing event\n%s\n", err.Error())
+			c.logger.Error().Err(err).Msgf("[%s] Error parsing event", eventLoopId)
 			continue
 		}
 
@@ -267,6 +294,8 @@ func (c *Conn) eventLoop() {
 }
 
 func (c *Conn) receiveLoop() {
+	loopId := uuid.New().String()
+	c.logger.Debug().Msgf("[%s] starting receive loop", loopId)
 	for c.runningContext.Err() == nil {
 		response, err := c.readResponse()
 		if err != nil {
@@ -281,18 +310,18 @@ func (c *Conn) receiveLoop() {
 		// We have a handler
 		if ok {
 			// Only allow 5 seconds to allow the handler to receive hte message on the channel
-			ctx, cancel := context.WithTimeout(c.runningContext, 5*time.Second)
+			ctx, cancel := context.WithTimeout(c.runningContext, 2*time.Second)
 			defer cancel()
 
 			select {
 			case responseChan <- response:
 			case <-c.runningContext.Done():
+				c.logger.Warn().Msgf("[%s] running context done", loopId)
 				// Parent connection context has stopped we most likely shutdown in the middle of waiting for a handler to handle the message
 				return
 			case <-ctx.Done():
 				// Do not return an error since this is not fatal but log since it could be a indication of problems
-				log.Printf("No one to handle response\nIs the connection overloaded or stopping?\n%v\n\n", response)
-				c.stopFunc()
+				c.logger.Warn().Msgf("[%s] no one to handle response. Is the connection overloaded or stopping?\n%v", loopId, response)
 			}
 		} else {
 			return
