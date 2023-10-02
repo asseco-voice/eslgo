@@ -186,8 +186,8 @@ func (c *Conn) close() {
 	c.logger.Debug().Msgf("[ID: %s] stopFunc", c.connectionId)
 	c.stopFunc()
 	c.logger.Debug().Msgf("[ID: %s] locking mutex", c.connectionId)
-	c.responseChanMutex.Lock()
-	defer c.responseChanMutex.Unlock()
+	//c.responseChanMutex.Lock()
+	//defer c.responseChanMutex.Unlock()
 	for key, responseChan := range c.responseChannels {
 		c.logger.Debug().Msgf("[ID: %s] removing channel %s", c.connectionId, key)
 		close(responseChan)
