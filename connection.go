@@ -44,6 +44,10 @@ type Conn struct {
 	onDisconnect      func(string)
 }
 
+func (c *Conn) Outbound() bool {
+	return c.outbound
+}
+
 func (c *Conn) ConnectionId() string {
 	return c.connectionId
 }
