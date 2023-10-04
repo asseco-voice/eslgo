@@ -92,6 +92,7 @@ func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger, connectionI
 	}
 	go instance.receiveLoop()
 	go instance.eventLoop()
+	go instance.contextLoop()
 	return instance
 }
 
@@ -193,7 +194,6 @@ func (c *Conn) close() {
 	// Allow users to do anything they need to do before we tear everything down
 	c.logger.Debug().Msgf("[ID: %s] stopFunc", c.connectionId)
 	c.stopFunc()
-	c.logger.Debug().Msgf("[ID: %s] locking mutex", c.connectionId)
 	//c.responseChanMutex.Lock()
 	//defer c.responseChanMutex.Unlock()
 	for key, responseChan := range c.responseChannels {
@@ -285,9 +285,6 @@ func (c *Conn) eventLoop() {
 		case raw := <-c.responseChannels[TypeEventJSON]:
 			c.logger.Debug().Msgf("[ID: %s][action_id: %s] event %s", c.connectionId, eventLoopId, TypeEventJSON)
 			if raw == nil {
-				if c.FinishedChannel() != nil {
-					c.FinishedChannel() <- true
-				}
 				// We only get nil here if the channel is closed
 				c.responseChanMutex.RUnlock()
 				return
@@ -295,23 +292,14 @@ func (c *Conn) eventLoop() {
 			event, err = readJSONEvent(raw.Body)
 		case <-c.responseChannels[TypeDisconnect]:
 			c.logger.Warn().Msgf("[ID: %s][action_id: %s] connection disconnected", c.connectionId, eventLoopId)
-			if c.onDisconnect != nil {
-				c.onDisconnect(c.connectionId)
-			}
+			c.responseChanMutex.RUnlock()
 			c.Close()
 			return
 		case <-c.runningContext.Done():
 			c.logger.Debug().Msgf("[ID: %s][action_id: %s] running context done", c.connectionId, eventLoopId)
-			if c.onDisconnect != nil {
-				c.onDisconnect(c.connectionId)
-			}
-			if c.FinishedChannel() != nil {
-				c.FinishedChannel() <- true
-			}
 			c.responseChanMutex.RUnlock()
 			return
 		}
-		c.responseChanMutex.RUnlock()
 
 		if err != nil {
 			c.logger.Error().Err(err).Msgf("[ID: %s][action_id: %s] Error parsing event", c.connectionId, eventLoopId)
@@ -320,6 +308,18 @@ func (c *Conn) eventLoop() {
 
 		c.callEventListener(event)
 	}
+}
+
+func (c *Conn) contextLoop() {
+	<-c.runningContext.Done()
+	c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] context is done", c.connectionId)
+	if c.FinishedChannel() != nil {
+		c.FinishedChannel() <- true
+	}
+	if c.onDisconnect != nil {
+		c.onDisconnect(c.connectionId)
+	}
+	return
 }
 
 func (c *Conn) receiveLoop() {
