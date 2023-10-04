@@ -261,11 +261,9 @@ func (c *Conn) eventLoop() {
 		c.responseChanMutex.RLock()
 		select {
 		case raw := <-c.responseChannels[TypeEventPlain]:
+			c.logger.Debug().Msgf("[ID: %s][action_id: %s] event %s", c.connectionId, eventLoopId, TypeEventPlain)
 			if raw == nil {
-				c.logger.Debug().Msgf("[ID: %s][action_id: %s] event %s", c.connectionId, eventLoopId, TypeEventPlain)
-				if c.FinishedChannel() != nil {
-					c.FinishedChannel() <- true
-				}
+				c.Close()
 				// We only get nil here if the channel is closed
 				c.responseChanMutex.RUnlock()
 				return
@@ -274,9 +272,7 @@ func (c *Conn) eventLoop() {
 		case raw := <-c.responseChannels[TypeEventXML]:
 			c.logger.Debug().Msgf("[ID: %s][action_id: %s] event %s", c.connectionId, eventLoopId, TypeEventXML)
 			if raw == nil {
-				if c.FinishedChannel() != nil {
-					c.FinishedChannel() <- true
-				}
+				c.Close()
 				// We only get nil here if the channel is closed
 				c.responseChanMutex.RUnlock()
 				return
@@ -285,6 +281,7 @@ func (c *Conn) eventLoop() {
 		case raw := <-c.responseChannels[TypeEventJSON]:
 			c.logger.Debug().Msgf("[ID: %s][action_id: %s] event %s", c.connectionId, eventLoopId, TypeEventJSON)
 			if raw == nil {
+				c.Close()
 				// We only get nil here if the channel is closed
 				c.responseChanMutex.RUnlock()
 				return
