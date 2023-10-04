@@ -158,9 +158,6 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
-	case <-c.RunningContext().Done():
-		c.logger.Debug().Msgf("[ID: %s][action_id: %s] connection running context done", c.connectionId, commandId)
-		return nil, errors.New("context canceled")
 	case <-ctx.Done():
 		c.logger.Error().Err(ctx.Err()).Msgf("[ID: %s][action_id: %s] context done", c.connectionId, commandId)
 		return nil, ctx.Err()
