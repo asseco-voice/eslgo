@@ -311,11 +311,14 @@ func (c *Conn) contextLoop() {
 	<-c.runningContext.Done()
 	c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] context is done", c.connectionId)
 	if c.FinishedChannel() != nil {
+		c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] finished channel is not null, sending event", c.connectionId)
 		c.FinishedChannel() <- true
 	}
 	if c.onDisconnect != nil {
+		c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] on disconnect is not null, calling", c.connectionId)
 		c.onDisconnect(c.connectionId)
 	}
+	c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] context loop finished", c.connectionId)
 	return
 }
 
