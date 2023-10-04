@@ -159,14 +159,9 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
-	case response := <-c.responseChannels[TypeDisconnect]:
-		c.logger.Debug().Msgf("[ID: %s][action_id: %s] text/disconnect-notice", c.connectionId, commandId)
-		if response == nil {
-			c.logger.Error().Msgf("[ID: %s][action_id: %s] freeswitch sent disconnect-notice", c.connectionId, commandId)
-			// We only get nil here if the channel is closed
-			return nil, errors.New("connection closed")
-		}
-		return response, nil
+	case <-c.runningContext.Done():
+		c.logger.Debug().Msgf("[ID: %s][action_id: %s] connection context is done", c.connectionId, commandId)
+		return nil, c.runningContext.Err()
 	case <-ctx.Done():
 		c.logger.Error().Err(ctx.Err()).Msgf("[ID: %s][action_id: %s] context done", c.connectionId, commandId)
 		return nil, ctx.Err()
@@ -253,15 +248,14 @@ func (c *Conn) callEventListener(event *Event) {
 }
 
 func (c *Conn) eventLoop() {
-	eventLoopId := uuid.New().String()
-	c.logger.Debug().Msgf("[ID: %s][action_id: %s] starting event loop", c.connectionId, eventLoopId)
+	c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] starting event loop", c.connectionId)
 	for {
 		var event *Event
 		var err error
 		c.responseChanMutex.RLock()
 		select {
 		case raw := <-c.responseChannels[TypeEventPlain]:
-			c.logger.Debug().Msgf("[ID: %s][action_id: %s] event %s", c.connectionId, eventLoopId, TypeEventPlain)
+			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventPlain)
 			if raw == nil {
 				c.Close()
 				// We only get nil here if the channel is closed
@@ -270,7 +264,7 @@ func (c *Conn) eventLoop() {
 			}
 			event, err = readPlainEvent(raw.Body)
 		case raw := <-c.responseChannels[TypeEventXML]:
-			c.logger.Debug().Msgf("[ID: %s][action_id: %s] event %s", c.connectionId, eventLoopId, TypeEventXML)
+			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventXML)
 			if raw == nil {
 				c.Close()
 				// We only get nil here if the channel is closed
@@ -279,7 +273,7 @@ func (c *Conn) eventLoop() {
 			}
 			event, err = readXMLEvent(raw.Body)
 		case raw := <-c.responseChannels[TypeEventJSON]:
-			c.logger.Debug().Msgf("[ID: %s][action_id: %s] event %s", c.connectionId, eventLoopId, TypeEventJSON)
+			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventJSON)
 			if raw == nil {
 				c.Close()
 				// We only get nil here if the channel is closed
@@ -288,18 +282,18 @@ func (c *Conn) eventLoop() {
 			}
 			event, err = readJSONEvent(raw.Body)
 		case <-c.responseChannels[TypeDisconnect]:
-			c.logger.Warn().Msgf("[ID: %s][action_id: %s] connection disconnected", c.connectionId, eventLoopId)
+			c.logger.Warn().Msgf("[ID: %s][action_id: event_loop] connection disconnected", c.connectionId)
 			c.responseChanMutex.RUnlock()
 			c.Close()
 			return
 		case <-c.runningContext.Done():
-			c.logger.Debug().Msgf("[ID: %s][action_id: %s] running context done", c.connectionId, eventLoopId)
+			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] running context done", c.connectionId)
 			c.responseChanMutex.RUnlock()
 			return
 		}
 
 		if err != nil {
-			c.logger.Error().Err(err).Msgf("[ID: %s][action_id: %s] Error parsing event", c.connectionId, eventLoopId)
+			c.logger.Error().Err(err).Msgf("[ID: %s][action_id: event_loop] Error parsing event", c.connectionId)
 			continue
 		}
 
