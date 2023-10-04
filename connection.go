@@ -158,6 +158,14 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
+	case response := <-c.responseChannels[TypeDisconnect]:
+		c.logger.Debug().Msgf("[ID: %s][action_id: %s] text/disconnect-notice", c.connectionId, commandId)
+		if response == nil {
+			c.logger.Error().Msgf("[ID: %s][action_id: %s] freeswitch sent disconnect-notice", c.connectionId, commandId)
+			// We only get nil here if the channel is closed
+			return nil, errors.New("connection closed")
+		}
+		return response, nil
 	case <-ctx.Done():
 		c.logger.Error().Err(ctx.Err()).Msgf("[ID: %s][action_id: %s] context done", c.connectionId, commandId)
 		return nil, ctx.Err()
