@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 	"net"
 	"net/textproto"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -323,6 +324,13 @@ func (c *Conn) contextLoop() {
 func (c *Conn) receiveLoop() {
 	loopId := uuid.New().String()
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] starting receive loop", c.connectionId, loopId)
+
+	defer func(log zerolog.Logger) {
+		if r := recover(); r != nil {
+			log.Error().Msgf("######### RECOVERED PANICKED GOROUTINE ######### \n %v \n %s", r, string(debug.Stack()))
+		}
+	}(c.logger)
+
 	for c.runningContext.Err() == nil {
 		response, err := c.readResponse()
 		if err != nil {
@@ -339,6 +347,10 @@ func (c *Conn) receiveLoop() {
 			// Only allow 5 seconds to allow the handler to receive hte message on the channel
 			ctx, cancel := context.WithTimeout(c.runningContext, 2*time.Second)
 			defer cancel()
+
+			if responseChan == nil {
+				return
+			}
 
 			select {
 			case responseChan <- response:
