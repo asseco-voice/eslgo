@@ -14,6 +14,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"github.com/rs/zerolog"
 	"net"
 	"net/textproto"
@@ -133,6 +134,7 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] sending command %s", c.connectionId, commandId, command.BuildMessage())
 	if c.disconnected {
 		c.logger.Debug().Msgf("[ID: %s][action_id: %s] connection disconnected, skipping command %s", c.connectionId, commandId, command.BuildMessage())
+		return nil, fmt.Errorf("connection closed")
 	}
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
