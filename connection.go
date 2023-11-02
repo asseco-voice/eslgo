@@ -43,6 +43,7 @@ type Conn struct {
 	logger            zerolog.Logger
 	connectionId      string
 	onDisconnect      func(string)
+	disconnected      bool
 }
 
 func (c *Conn) Outbound() bool {
@@ -130,6 +131,9 @@ func (c *Conn) RemoveEventListener(channelUUID string, id string) {
 func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawResponse, error) {
 	commandId := uuid.New().String()
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] sending command %s", c.connectionId, commandId, command.BuildMessage())
+	if c.disconnected {
+		c.logger.Debug().Msgf("[ID: %s][action_id: %s] connection disconnected, skipping command %s", c.connectionId, commandId, command.BuildMessage())
+	}
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
 
@@ -288,6 +292,7 @@ func (c *Conn) eventLoop() {
 			event, err = readJSONEvent(raw.Body)
 		case <-c.responseChannels[TypeDisconnect]:
 			c.logger.Warn().Msgf("[ID: %s][action_id: event_loop] connection disconnected", c.connectionId)
+			c.disconnected = true
 			c.responseChanMutex.RUnlock()
 			c.Close()
 			return
