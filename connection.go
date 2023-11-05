@@ -161,12 +161,15 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 		return nil, err
 	}
 
+	replyChannel := c.getResponseChannel(TypeReply)
+	responseChannel := c.getResponseChannel(TypeAPIResponse)
+
 	// Get response
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] locking mutex and waiting for response", c.connectionId, commandId)
 	c.responseChanMutex.RLock()
 	defer c.responseChanMutex.RUnlock()
 	select {
-	case response := <-c.getResponseChannel(TypeReply):
+	case response := <-replyChannel:
 		c.logger.Debug().Msgf("[ID: %s][action_id: %s] command/reply", c.connectionId, commandId)
 		if response == nil {
 			c.logger.Error().Msgf("[ID: %s][action_id: %s] connection closed", c.connectionId, commandId)
@@ -174,7 +177,7 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
-	case response := <-c.getResponseChannel(TypeAPIResponse):
+	case response := <-responseChannel:
 		c.logger.Debug().Msgf("[ID: %s][action_id: %s] api/response", c.connectionId, commandId)
 		if response == nil {
 			c.logger.Error().Msgf("[ID: %s][action_id: %s] connection closed", c.connectionId, commandId)
