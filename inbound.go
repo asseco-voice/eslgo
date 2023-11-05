@@ -30,7 +30,7 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func(str
 	connection := NewConnection(c, false, logger, uuid.New().String(), onDisconnect)
 
 	// First auth
-	<-connection.responseChannels[TypeAuthRequest]
+	<-connection.getResponseChannel(TypeAuthRequest)
 	err = connection.doAuth(connection.runningContext, command.Auth{Password: password})
 	if err != nil {
 		// Try to gracefully disconnect, we have the wrong password.
@@ -66,7 +66,7 @@ func (c *Conn) authLoop(auth command.Auth) {
 
 	for {
 		select {
-		case <-c.responseChannels[TypeAuthRequest]:
+		case <-c.getResponseChannel(TypeAuthRequest):
 			err := c.doAuth(c.runningContext, auth)
 			if err != nil {
 				c.logger.Error().Err(err).Msgf("failed to authenticate")

@@ -28,13 +28,15 @@ import (
 
 /*Conn ...*/
 type Conn struct {
-	conn              net.Conn
-	reader            *bufio.Reader
-	header            *textproto.Reader
-	writeLock         sync.Mutex
-	runningContext    context.Context
-	stopFunc          func()
-	responseChannels  map[string]chan *RawResponse
+	conn                     net.Conn
+	reader                   *bufio.Reader
+	header                   *textproto.Reader
+	writeLock                sync.Mutex
+	runningContext           context.Context
+	stopFunc                 func()
+	responseChannels         map[string]chan *RawResponse
+	responseChannelsMapMutex sync.Mutex
+
 	responseChanMutex sync.RWMutex
 	eventListenerLock sync.RWMutex
 	eventListeners    map[string]map[string]EventListener
@@ -45,6 +47,16 @@ type Conn struct {
 	connectionId      string
 	onDisconnect      func(string)
 	disconnected      bool
+}
+
+func (c *Conn) getResponseChannel(contentType string) chan *RawResponse {
+	c.responseChannelsMapMutex.Lock()
+	defer c.responseChannelsMapMutex.Unlock()
+	channel, ok := c.responseChannels[contentType]
+	if !ok {
+		return nil
+	}
+	return channel
 }
 
 func (c *Conn) Outbound() bool {
@@ -151,10 +163,10 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 
 	// Get response
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] locking mutex and waiting for response", c.connectionId, commandId)
-	c.responseChanMutex.Lock()
-	defer c.responseChanMutex.Unlock()
+	c.responseChanMutex.RLock()
+	defer c.responseChanMutex.RUnlock()
 	select {
-	case response := <-c.responseChannels[TypeReply]:
+	case response := <-c.getResponseChannel(TypeReply):
 		c.logger.Debug().Msgf("[ID: %s][action_id: %s] command/reply", c.connectionId, commandId)
 		if response == nil {
 			c.logger.Error().Msgf("[ID: %s][action_id: %s] connection closed", c.connectionId, commandId)
@@ -162,7 +174,7 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 			return nil, errors.New("connection closed")
 		}
 		return response, nil
-	case response := <-c.responseChannels[TypeAPIResponse]:
+	case response := <-c.getResponseChannel(TypeAPIResponse):
 		c.logger.Debug().Msgf("[ID: %s][action_id: %s] api/response", c.connectionId, commandId)
 		if response == nil {
 			c.logger.Error().Msgf("[ID: %s][action_id: %s] connection closed", c.connectionId, commandId)
@@ -263,44 +275,44 @@ func (c *Conn) eventLoop() {
 	for {
 		var event *Event
 		var err error
-		c.responseChanMutex.Lock()
+		c.responseChanMutex.RLock()
 		select {
-		case raw := <-c.responseChannels[TypeEventPlain]:
+		case raw := <-c.getResponseChannel(TypeEventPlain):
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventPlain)
 			if raw == nil {
 				c.Close()
 				// We only get nil here if the channel is closed
-				c.responseChanMutex.Unlock()
+				c.responseChanMutex.RUnlock()
 				return
 			}
 			event, err = readPlainEvent(raw.Body)
-		case raw := <-c.responseChannels[TypeEventXML]:
+		case raw := <-c.getResponseChannel(TypeEventXML):
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventXML)
 			if raw == nil {
 				c.Close()
 				// We only get nil here if the channel is closed
-				c.responseChanMutex.Unlock()
+				c.responseChanMutex.RUnlock()
 				return
 			}
 			event, err = readXMLEvent(raw.Body)
-		case raw := <-c.responseChannels[TypeEventJSON]:
+		case raw := <-c.getResponseChannel(TypeEventJSON):
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventJSON)
 			if raw == nil {
 				c.Close()
 				// We only get nil here if the channel is closed
-				c.responseChanMutex.Unlock()
+				c.responseChanMutex.RUnlock()
 				return
 			}
 			event, err = readJSONEvent(raw.Body)
-		case <-c.responseChannels[TypeDisconnect]:
+		case <-c.getResponseChannel(TypeDisconnect):
 			c.logger.Warn().Msgf("[ID: %s][action_id: event_loop] connection disconnected", c.connectionId)
 			c.disconnected = true
-			c.responseChanMutex.Unlock()
+			c.responseChanMutex.RUnlock()
 			c.Close()
 			return
 		case <-c.runningContext.Done():
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] running context done", c.connectionId)
-			c.responseChanMutex.Unlock()
+			c.responseChanMutex.RUnlock()
 			return
 		}
 
@@ -343,35 +355,31 @@ func (c *Conn) receiveLoop() {
 		if err != nil {
 			return
 		}
-		c.responseChanMutex.Lock()
-		responseChan, ok := c.responseChannels[response.GetHeader("Content-Type")]
-		if !ok && len(c.responseChannels) <= 0 {
+		c.responseChanMutex.RLock()
+		responseChan := c.getResponseChannel(response.GetHeader("Content-Type"))
+		if responseChan == nil {
 			return
 		}
 
 		// We have a handler
-		if ok {
-			// Only allow 5 seconds to allow the handler to receive hte message on the channel
-			ctx, cancel := context.WithTimeout(c.runningContext, 2*time.Second)
-			defer cancel()
+		// Only allow 5 seconds to allow the handler to receive hte message on the channel
+		ctx, cancel := context.WithTimeout(c.runningContext, 2*time.Second)
+		defer cancel()
 
-			if responseChan == nil {
-				return
-			}
-
-			select {
-			case responseChan <- response:
-			case <-c.runningContext.Done():
-				c.logger.Warn().Msgf("[ID: %s][action_id: %s] running context done", c.connectionId, loopId)
-				// Parent connection context has stopped we most likely shutdown in the middle of waiting for a handler to handle the message
-				return
-			case <-ctx.Done():
-				// Do not return an error since this is not fatal but log since it could be a indication of problems
-				c.logger.Warn().Msgf("[ID: %s][action_id: %s] no one to handle response. Is the connection overloaded or stopping?\n%v", c.connectionId, loopId, response)
-			}
-		} else {
+		if responseChan == nil {
 			return
 		}
-		c.responseChanMutex.Unlock()
+
+		select {
+		case responseChan <- response:
+		case <-c.runningContext.Done():
+			c.logger.Warn().Msgf("[ID: %s][action_id: %s] running context done", c.connectionId, loopId)
+			// Parent connection context has stopped we most likely shutdown in the middle of waiting for a handler to handle the message
+			return
+		case <-ctx.Done():
+			// Do not return an error since this is not fatal but log since it could be a indication of problems
+			c.logger.Warn().Msgf("[ID: %s][action_id: %s] no one to handle response. Is the connection overloaded or stopping?\n%v", c.connectionId, loopId, response)
+		}
+		c.responseChanMutex.RUnlock()
 	}
 }
