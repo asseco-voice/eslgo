@@ -15,7 +15,6 @@ import (
 	"errors"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
-	"log"
 	"net"
 	"time"
 
@@ -111,19 +110,4 @@ func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
 		cancel()
 	}
 	//c.ExitAndClose()
-}
-
-func (c *Conn) dummyLoop() {
-	disconnectChannel := c.disconnectChannel()
-	authChannel := c.authChannel()
-	select {
-	case <-disconnectChannel:
-		log.Println("Disconnect outbound connection", c.conn.RemoteAddr())
-		return
-	case <-authChannel:
-		log.Println("Ignoring auth request on outbound connection", c.conn.RemoteAddr())
-	case <-c.runningContext.Done():
-		log.Printf("Context done %s", c.runningContext.Err().Error())
-		return
-	}
 }
