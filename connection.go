@@ -277,7 +277,7 @@ func (c *Conn) eventLoop() {
 		var err error
 		c.responseChanMutex.RLock()
 		select {
-		case raw := <-c.getResponseChannel(TypeEventPlain):
+		case raw := <-c.responseChannels[TypeEventPlain]:
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventPlain)
 			if raw == nil {
 				c.Close()
@@ -286,7 +286,7 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readPlainEvent(raw.Body)
-		case raw := <-c.getResponseChannel(TypeEventXML):
+		case raw := <-c.responseChannels[TypeEventXML]:
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventXML)
 			if raw == nil {
 				c.Close()
@@ -295,7 +295,7 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readXMLEvent(raw.Body)
-		case raw := <-c.getResponseChannel(TypeEventJSON):
+		case raw := <-c.responseChannels[TypeEventJSON]:
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventJSON)
 			if raw == nil {
 				c.Close()
@@ -304,7 +304,7 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readJSONEvent(raw.Body)
-		case <-c.getResponseChannel(TypeDisconnect):
+		case <-c.responseChannels[TypeDisconnect]:
 			c.logger.Warn().Msgf("[ID: %s][action_id: event_loop] connection disconnected", c.connectionId)
 			c.disconnected = true
 			c.responseChanMutex.RUnlock()
@@ -365,10 +365,6 @@ func (c *Conn) receiveLoop() {
 		// Only allow 5 seconds to allow the handler to receive hte message on the channel
 		ctx, cancel := context.WithTimeout(c.runningContext, 2*time.Second)
 		defer cancel()
-
-		if responseChan == nil {
-			return
-		}
 
 		select {
 		case responseChan <- response:
