@@ -361,7 +361,8 @@ func (c *Conn) receiveLoop() {
 		c.responseChanMutex.RLock()
 		responseChan := c.getResponseChannel(response.GetHeader("Content-Type"))
 		if responseChan == nil {
-			return
+			c.responseChanMutex.RUnlock()
+			continue
 		}
 
 		// We have a handler
