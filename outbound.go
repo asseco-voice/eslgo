@@ -114,11 +114,13 @@ func (c *Conn) outboundHandle(handler OutboundHandler, opts *Options) {
 }
 
 func (c *Conn) dummyLoop() {
+	disconnectChannel := c.disconnectChannel()
+	authChannel := c.authChannel()
 	select {
-	case <-c.responseChannels[TypeDisconnect]:
+	case <-disconnectChannel:
 		log.Println("Disconnect outbound connection", c.conn.RemoteAddr())
 		return
-	case <-c.responseChannels[TypeAuthRequest]:
+	case <-authChannel:
 		log.Println("Ignoring auth request on outbound connection", c.conn.RemoteAddr())
 	case <-c.runningContext.Done():
 		log.Printf("Context done %s", c.runningContext.Err().Error())

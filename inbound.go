@@ -63,9 +63,13 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func(str
 //}
 
 func (c *Conn) authLoop(auth command.Auth) {
+	authChannel := c.authChannel()
+	if authChannel == nil {
+		return
+	}
 	for {
 		select {
-		case <-c.responseChannels[TypeAuthRequest]:
+		case <-authChannel:
 			err := c.doAuth(c.runningContext, auth)
 			if err != nil {
 				c.logger.Error().Err(err).Msgf("failed to authenticate")
