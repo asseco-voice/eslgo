@@ -151,8 +151,8 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 
 	// Get response
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] locking mutex and waiting for response", c.connectionId, commandId)
-	c.responseChanMutex.RLock()
-	defer c.responseChanMutex.RUnlock()
+	c.responseChanMutex.Lock()
+	defer c.responseChanMutex.Unlock()
 	select {
 	case response := <-c.responseChannels[TypeReply]:
 		c.logger.Debug().Msgf("[ID: %s][action_id: %s] command/reply", c.connectionId, commandId)
@@ -263,14 +263,14 @@ func (c *Conn) eventLoop() {
 	for {
 		var event *Event
 		var err error
-		c.responseChanMutex.RLock()
+		c.responseChanMutex.Lock()
 		select {
 		case raw := <-c.responseChannels[TypeEventPlain]:
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventPlain)
 			if raw == nil {
 				c.Close()
 				// We only get nil here if the channel is closed
-				c.responseChanMutex.RUnlock()
+				c.responseChanMutex.Unlock()
 				return
 			}
 			event, err = readPlainEvent(raw.Body)
@@ -279,7 +279,7 @@ func (c *Conn) eventLoop() {
 			if raw == nil {
 				c.Close()
 				// We only get nil here if the channel is closed
-				c.responseChanMutex.RUnlock()
+				c.responseChanMutex.Unlock()
 				return
 			}
 			event, err = readXMLEvent(raw.Body)
@@ -288,19 +288,19 @@ func (c *Conn) eventLoop() {
 			if raw == nil {
 				c.Close()
 				// We only get nil here if the channel is closed
-				c.responseChanMutex.RUnlock()
+				c.responseChanMutex.Unlock()
 				return
 			}
 			event, err = readJSONEvent(raw.Body)
 		case <-c.responseChannels[TypeDisconnect]:
 			c.logger.Warn().Msgf("[ID: %s][action_id: event_loop] connection disconnected", c.connectionId)
 			c.disconnected = true
-			c.responseChanMutex.RUnlock()
+			c.responseChanMutex.Unlock()
 			c.Close()
 			return
 		case <-c.runningContext.Done():
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] running context done", c.connectionId)
-			c.responseChanMutex.RUnlock()
+			c.responseChanMutex.Unlock()
 			return
 		}
 
@@ -343,7 +343,7 @@ func (c *Conn) receiveLoop() {
 		if err != nil {
 			return
 		}
-		c.responseChanMutex.RLock()
+		c.responseChanMutex.Lock()
 		responseChan, ok := c.responseChannels[response.GetHeader("Content-Type")]
 		if !ok && len(c.responseChannels) <= 0 {
 			return
@@ -372,6 +372,6 @@ func (c *Conn) receiveLoop() {
 		} else {
 			return
 		}
-		c.responseChanMutex.RUnlock()
+		c.responseChanMutex.Unlock()
 	}
 }
