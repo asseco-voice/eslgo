@@ -275,12 +275,16 @@ func (c *Conn) callEventListener(event *Event) {
 
 func (c *Conn) eventLoop() {
 	c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] starting event loop", c.connectionId)
+	plainEventChannel := c.getResponseChannel(TypeEventPlain)
+	xmlEventChannel := c.getResponseChannel(TypeEventPlain)
+	jsonEventChannel := c.getResponseChannel(TypeEventPlain)
+	disconnectChannel := c.getResponseChannel(TypeDisconnect)
 	for {
 		var event *Event
 		var err error
 		c.responseChanMutex.RLock()
 		select {
-		case raw := <-c.responseChannels[TypeEventPlain]:
+		case raw := <-plainEventChannel:
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventPlain)
 			if raw == nil {
 				c.Close()
@@ -289,7 +293,7 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readPlainEvent(raw.Body)
-		case raw := <-c.responseChannels[TypeEventXML]:
+		case raw := <-xmlEventChannel:
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventXML)
 			if raw == nil {
 				c.Close()
@@ -298,7 +302,7 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readXMLEvent(raw.Body)
-		case raw := <-c.responseChannels[TypeEventJSON]:
+		case raw := <-jsonEventChannel:
 			c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] event %s", c.connectionId, TypeEventJSON)
 			if raw == nil {
 				c.Close()
@@ -307,7 +311,7 @@ func (c *Conn) eventLoop() {
 				return
 			}
 			event, err = readJSONEvent(raw.Body)
-		case <-c.responseChannels[TypeDisconnect]:
+		case <-disconnectChannel:
 			c.logger.Warn().Msgf("[ID: %s][action_id: event_loop] connection disconnected", c.connectionId)
 			c.disconnected = true
 			c.responseChanMutex.RUnlock()
