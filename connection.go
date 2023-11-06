@@ -274,6 +274,11 @@ func (c *Conn) callEventListener(event *Event) {
 }
 
 func (c *Conn) eventLoop() {
+	defer func(log zerolog.Logger) {
+		if r := recover(); r != nil {
+			log.Error().Msgf("######### RECOVERED PANICKED GOROUTINE ######### \n %v \n %s", r, string(debug.Stack()))
+		}
+	}(c.logger)
 	c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] starting event loop", c.connectionId)
 	plainEventChannel := c.getResponseChannel(TypeEventPlain)
 	xmlEventChannel := c.getResponseChannel(TypeEventXML)
