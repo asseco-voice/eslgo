@@ -276,8 +276,8 @@ func (c *Conn) callEventListener(event *Event) {
 func (c *Conn) eventLoop() {
 	c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] starting event loop", c.connectionId)
 	plainEventChannel := c.getResponseChannel(TypeEventPlain)
-	xmlEventChannel := c.getResponseChannel(TypeEventPlain)
-	jsonEventChannel := c.getResponseChannel(TypeEventPlain)
+	xmlEventChannel := c.getResponseChannel(TypeEventXML)
+	jsonEventChannel := c.getResponseChannel(TypeEventJSON)
 	disconnectChannel := c.getResponseChannel(TypeDisconnect)
 	for {
 		var event *Event
