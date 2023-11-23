@@ -31,14 +31,14 @@ type Conn struct {
 	conn                     net.Conn
 	reader                   *bufio.Reader
 	header                   *textproto.Reader
-	writeLock                sync.Mutex
+	writeLock                *sync.Mutex
 	runningContext           context.Context
 	stopFunc                 func()
 	responseChannels         map[string]chan *RawResponse
-	responseChannelsMapMutex sync.Mutex
+	responseChannelsMapMutex *sync.Mutex
 
-	responseChanMutex sync.RWMutex
-	eventListenerLock sync.RWMutex
+	responseChanMutex *sync.RWMutex
+	eventListenerLock *sync.RWMutex
 	eventListeners    map[string]map[string]EventListener
 	outbound          bool
 	closeOnce         sync.Once
