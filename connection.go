@@ -31,14 +31,14 @@ type Conn struct {
 	conn                     net.Conn
 	reader                   *bufio.Reader
 	header                   *textproto.Reader
-	writeLock                *sync.Mutex
+	writeLock                sync.Mutex
 	runningContext           context.Context
 	stopFunc                 func()
 	responseChannels         map[string]chan *RawResponse
-	responseChannelsMapMutex *sync.Mutex
+	responseChannelsMapMutex sync.Mutex
 
-	responseChanMutex *sync.RWMutex
-	eventListenerLock *sync.RWMutex
+	responseChanMutex sync.RWMutex
+	eventListenerLock sync.RWMutex
 	eventListeners    map[string]map[string]EventListener
 	outbound          bool
 	closeOnce         sync.Once
@@ -101,13 +101,16 @@ func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger, connectionI
 			TypeAuthRequest: make(chan *RawResponse, 1), // Buffered to ensure we do not lose the initial auth request before we are setup to respond
 			TypeDisconnect:  make(chan *RawResponse),
 		},
-		runningContext: runningContext,
-		stopFunc:       stop,
-		eventListeners: make(map[string]map[string]EventListener),
-		outbound:       outbound,
-		logger:         logger,
-		connectionId:   connectionId,
-		onDisconnect:   onDisconnect,
+		runningContext:    runningContext,
+		stopFunc:          stop,
+		eventListeners:    make(map[string]map[string]EventListener),
+		outbound:          outbound,
+		logger:            logger,
+		connectionId:      connectionId,
+		onDisconnect:      onDisconnect,
+		writeLock:         sync.Mutex{},
+		responseChanMutex: sync.RWMutex{},
+		eventListenerLock: sync.RWMutex{},
 	}
 	go instance.receiveLoop()
 	go instance.eventLoop()
