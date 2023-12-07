@@ -36,7 +36,6 @@ type Conn struct {
 	runningContext           context.Context
 	stopFunc                 func()
 	responseChannels         map[string]chan *RawResponse
-	responseChannelsSyncMap  sync.Map
 	responseChannelsMapMutex sync.Mutex
 
 	responseChanMutex sync.RWMutex
