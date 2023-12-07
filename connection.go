@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"net"
 	"net/textproto"
 	"runtime/debug"
@@ -35,6 +36,7 @@ type Conn struct {
 	runningContext           context.Context
 	stopFunc                 func()
 	responseChannels         map[string]chan *RawResponse
+	responseChannelsSyncMap  sync.Map
 	responseChannelsMapMutex sync.Mutex
 
 	responseChanMutex sync.RWMutex
@@ -365,15 +367,37 @@ func (c *Conn) receiveLoop() {
 		}
 	}(c.logger)
 
+	replyChannel := c.getResponseChannel(TypeReply)
+	apiResponseChannel := c.getResponseChannel(TypeAPIResponse)
+	eventPlainChannel := c.getResponseChannel(TypeEventPlain)
+	eventXmlChannel := c.getResponseChannel(TypeEventXML)
+	eventJsonChannel := c.getResponseChannel(TypeEventJSON)
+	authRequestChannel := c.getResponseChannel(TypeAuthRequest)
+	disconnectChannel := c.getResponseChannel(TypeDisconnect)
+
 	for c.runningContext.Err() == nil {
 		response, err := c.readResponse()
 		if err != nil {
 			return
 		}
-		c.responseChanMutex.RLock()
-		responseChan := c.getResponseChannel(response.GetHeader("Content-Type"))
-		if responseChan == nil {
-			c.responseChanMutex.RUnlock()
+		var responseChan chan *RawResponse
+		switch response.GetHeader("Content-Type") {
+		case TypeReply:
+			responseChan = replyChannel
+		case TypeAPIResponse:
+			responseChan = apiResponseChannel
+		case TypeEventPlain:
+			responseChan = eventPlainChannel
+		case TypeEventXML:
+			responseChan = eventXmlChannel
+		case TypeEventJSON:
+			responseChan = eventJsonChannel
+		case TypeAuthRequest:
+			responseChan = authRequestChannel
+		case TypeDisconnect:
+			responseChan = disconnectChannel
+		default:
+			log.Warn().Msgf("[ID: %s][action_id: %s] no channel has been found for %s", c.connectionId, loopId, response.GetHeader("Content-Type"))
 			continue
 		}
 
@@ -392,6 +416,5 @@ func (c *Conn) receiveLoop() {
 			// Do not return an error since this is not fatal but log since it could be a indication of problems
 			c.logger.Warn().Msgf("[ID: %s][action_id: %s] no one to handle response. Is the connection overloaded or stopping?\n%v", c.connectionId, loopId, response)
 		}
-		c.responseChanMutex.RUnlock()
 	}
 }
