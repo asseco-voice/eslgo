@@ -29,14 +29,14 @@ import (
 
 /*Conn ...*/
 type Conn struct {
-	conn                     net.Conn
-	reader                   *bufio.Reader
-	header                   *textproto.Reader
-	writeLock                sync.Mutex
-	runningContext           context.Context
-	stopFunc                 func()
-	responseChannels         map[string]chan *RawResponse
-	responseChannelsMapMutex sync.Mutex
+	conn           net.Conn
+	reader         *bufio.Reader
+	header         *textproto.Reader
+	writeLock      sync.Mutex
+	runningContext context.Context
+	stopFunc       func()
+
+	channels Channels
 
 	responseChanMutex sync.RWMutex
 	eventListenerLock sync.RWMutex
@@ -50,14 +50,72 @@ type Conn struct {
 	disconnected      bool
 }
 
-func (c *Conn) getResponseChannel(contentType string) chan *RawResponse {
-	c.responseChannelsMapMutex.Lock()
-	defer c.responseChannelsMapMutex.Unlock()
-	channel, ok := c.responseChannels[contentType]
-	if !ok {
+type Channels struct {
+	replyChannel       chan *RawResponse
+	apiResponseChannel chan *RawResponse
+	eventPlainChannel  chan *RawResponse
+	eventXmlChannel    chan *RawResponse
+	eventJsonChannel   chan *RawResponse
+	authRequestChannel chan *RawResponse
+	disconnectChannel  chan *RawResponse
+}
+
+func (c *Channels) Close() {
+	close(c.replyChannel)
+	close(c.apiResponseChannel)
+	close(c.eventPlainChannel)
+	close(c.eventJsonChannel)
+	close(c.authRequestChannel)
+	close(c.disconnectChannel)
+}
+
+func (c *Channels) ReplyChannel() chan *RawResponse {
+	return c.replyChannel
+}
+
+func (c *Channels) ApiResponseChannel() chan *RawResponse {
+	return c.apiResponseChannel
+}
+
+func (c *Channels) EventPlainChannel() chan *RawResponse {
+	return c.eventPlainChannel
+}
+
+func (c *Channels) EventXmlChannel() chan *RawResponse {
+	return c.eventXmlChannel
+}
+
+func (c *Channels) EventJsonChannel() chan *RawResponse {
+	return c.eventJsonChannel
+}
+
+func (c *Channels) AuthRequestChannel() chan *RawResponse {
+	return c.authRequestChannel
+}
+
+func (c *Channels) DisconnectChannel() chan *RawResponse {
+	return c.disconnectChannel
+}
+
+func (c *Channels) ByType(channelType string) chan *RawResponse {
+	switch channelType {
+	case TypeReply:
+		return c.replyChannel
+	case TypeAPIResponse:
+		return c.apiResponseChannel
+	case TypeEventPlain:
+		return c.eventPlainChannel
+	case TypeEventXML:
+		return c.eventXmlChannel
+	case TypeEventJSON:
+		return c.eventJsonChannel
+	case TypeAuthRequest:
+		return c.authRequestChannel
+	case TypeDisconnect:
+		return c.disconnectChannel
+	default:
 		return nil
 	}
-	return channel
 }
 
 func (c *Conn) Outbound() bool {
@@ -82,7 +140,6 @@ func (c *Conn) RunningContext() context.Context {
 
 const EndOfMessage = "\r\n\r\n"
 
-// NewConnection exported constructor for alterative builds
 func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger, connectionId string, onDisconnect func(string)) *Conn {
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)
@@ -93,14 +150,14 @@ func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger, connectionI
 		conn:   c,
 		reader: reader,
 		header: header,
-		responseChannels: map[string]chan *RawResponse{
-			TypeReply:       make(chan *RawResponse),
-			TypeAPIResponse: make(chan *RawResponse),
-			TypeEventPlain:  make(chan *RawResponse),
-			TypeEventXML:    make(chan *RawResponse),
-			TypeEventJSON:   make(chan *RawResponse),
-			TypeAuthRequest: make(chan *RawResponse, 1), // Buffered to ensure we do not lose the initial auth request before we are setup to respond
-			TypeDisconnect:  make(chan *RawResponse),
+		channels: Channels{
+			replyChannel:       make(chan *RawResponse),
+			apiResponseChannel: make(chan *RawResponse),
+			eventPlainChannel:  make(chan *RawResponse),
+			eventXmlChannel:    make(chan *RawResponse),
+			eventJsonChannel:   make(chan *RawResponse),
+			authRequestChannel: make(chan *RawResponse, 1), // Buffered to ensure we do not lose the initial auth request before we are setup to respond
+			disconnectChannel:  make(chan *RawResponse),
 		},
 		runningContext:    runningContext,
 		stopFunc:          stop,
@@ -165,8 +222,8 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 		return nil, err
 	}
 
-	replyChannel := c.getResponseChannel(TypeReply)
-	responseChannel := c.getResponseChannel(TypeAPIResponse)
+	replyChannel := c.channels.ReplyChannel()
+	responseChannel := c.channels.ApiResponseChannel()
 
 	// Get response
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] locking mutex and waiting for response", c.connectionId, commandId)
@@ -219,14 +276,7 @@ func (c *Conn) close() {
 	// Allow users to do anything they need to do before we tear everything down
 	c.logger.Debug().Msgf("[ID: %s] stopFunc", c.connectionId)
 	c.stopFunc()
-	//c.responseChanMutex.Lock()
-	//defer c.responseChanMutex.Unlock()
-	for key, responseChan := range c.responseChannels {
-		c.logger.Debug().Msgf("[ID: %s] removing channel %s", c.connectionId, key)
-		close(responseChan)
-		delete(c.responseChannels, key)
-	}
-
+	c.channels.Close()
 	// Close the connection only after we have the response channel lock and we have deleted all response channels to ensure we don't receive on a closed channel
 	c.logger.Debug().Msgf("[ID: %s] closing underling connection", c.connectionId)
 	err := c.conn.Close()
@@ -283,11 +333,13 @@ func (c *Conn) eventLoop() {
 			log.Error().Msgf("######### RECOVERED PANICKED GOROUTINE ######### \n %v \n %s", r, string(debug.Stack()))
 		}
 	}(c.logger)
+
 	c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] starting event loop", c.connectionId)
-	plainEventChannel := c.getResponseChannel(TypeEventPlain)
-	xmlEventChannel := c.getResponseChannel(TypeEventXML)
-	jsonEventChannel := c.getResponseChannel(TypeEventJSON)
-	disconnectChannel := c.getResponseChannel(TypeDisconnect)
+	plainEventChannel := c.channels.EventPlainChannel()
+	xmlEventChannel := c.channels.EventXmlChannel()
+	jsonEventChannel := c.channels.EventJsonChannel()
+	disconnectChannel := c.channels.DisconnectChannel()
+
 	for {
 		var event *Event
 		var err error
@@ -353,7 +405,6 @@ func (c *Conn) contextLoop() {
 		c.onDisconnect(c.connectionId)
 	}
 	c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] context loop finished", c.connectionId)
-	return
 }
 
 func (c *Conn) receiveLoop() {
@@ -366,36 +417,13 @@ func (c *Conn) receiveLoop() {
 		}
 	}(c.logger)
 
-	replyChannel := c.getResponseChannel(TypeReply)
-	apiResponseChannel := c.getResponseChannel(TypeAPIResponse)
-	eventPlainChannel := c.getResponseChannel(TypeEventPlain)
-	eventXmlChannel := c.getResponseChannel(TypeEventXML)
-	eventJsonChannel := c.getResponseChannel(TypeEventJSON)
-	authRequestChannel := c.getResponseChannel(TypeAuthRequest)
-	disconnectChannel := c.getResponseChannel(TypeDisconnect)
-
 	for c.runningContext.Err() == nil {
 		response, err := c.readResponse()
 		if err != nil {
 			return
 		}
-		var responseChan chan *RawResponse
-		switch response.GetHeader("Content-Type") {
-		case TypeReply:
-			responseChan = replyChannel
-		case TypeAPIResponse:
-			responseChan = apiResponseChannel
-		case TypeEventPlain:
-			responseChan = eventPlainChannel
-		case TypeEventXML:
-			responseChan = eventXmlChannel
-		case TypeEventJSON:
-			responseChan = eventJsonChannel
-		case TypeAuthRequest:
-			responseChan = authRequestChannel
-		case TypeDisconnect:
-			responseChan = disconnectChannel
-		default:
+		responseChan := c.channels.ByType(response.GetHeader("Content-Type"))
+		if responseChan == nil {
 			log.Warn().Msgf("[ID: %s][action_id: %s] no channel has been found for %s", c.connectionId, loopId, response.GetHeader("Content-Type"))
 			continue
 		}

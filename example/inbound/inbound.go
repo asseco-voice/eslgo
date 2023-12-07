@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/rs/zerolog"
 	"time"
 
 	"github.com/AkronimBlack/eslgo"
@@ -20,9 +21,9 @@ import (
 
 func main() {
 	// Connect to FreeSWITCH
-	conn, err := eslgo.Dial("127.0.0.1:8021", "ClueCon", 2*time.Second, func() {
-		fmt.Println("Inbound Connection Disconnected")
-	})
+	conn, err := eslgo.Dial("127.0.0.1:8021", "ClueCon", 2*time.Second, func(connectionId string) {
+		fmt.Printf("Inbound Connection Disconnected %s\n", connectionId)
+	}, zerolog.Logger{})
 	if err != nil {
 		fmt.Println("Error connecting", err)
 		return
