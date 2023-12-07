@@ -27,29 +27,6 @@ import (
 	"github.com/google/uuid"
 )
 
-/*Conn ...*/
-type Conn struct {
-	conn           net.Conn
-	reader         *bufio.Reader
-	header         *textproto.Reader
-	writeLock      sync.Mutex
-	runningContext context.Context
-	stopFunc       func()
-
-	channels Channels
-
-	responseChanMutex sync.RWMutex
-	eventListenerLock sync.RWMutex
-	eventListeners    map[string]map[string]EventListener
-	outbound          bool
-	closeOnce         sync.Once
-	finishedChannel   chan bool
-	logger            zerolog.Logger
-	connectionId      string
-	onDisconnect      func(string)
-	disconnected      bool
-}
-
 type Channels struct {
 	replyChannel       chan *RawResponse
 	apiResponseChannel chan *RawResponse
@@ -95,6 +72,57 @@ func (c *Channels) AuthRequestChannel() chan *RawResponse {
 
 func (c *Channels) DisconnectChannel() chan *RawResponse {
 	return c.disconnectChannel
+}
+
+/*Conn ...*/
+type Conn struct {
+	conn           net.Conn
+	reader         *bufio.Reader
+	header         *textproto.Reader
+	writeLock      sync.Mutex
+	runningContext context.Context
+	stopFunc       func()
+
+	channels Channels
+
+	responseChanMutex sync.RWMutex
+	eventListenerLock sync.RWMutex
+	eventListeners    map[string]map[string]EventListener
+	outbound          bool
+	closeOnce         sync.Once
+	finishedChannel   chan bool
+	logger            zerolog.Logger
+	connectionId      string
+	onDisconnect      func(string)
+	disconnected      bool
+}
+
+func (c *Conn) ReplyChannel() chan *RawResponse {
+	return c.channels.replyChannel
+}
+
+func (c *Conn) ApiResponseChannel() chan *RawResponse {
+	return c.channels.apiResponseChannel
+}
+
+func (c *Conn) EventPlainChannel() chan *RawResponse {
+	return c.channels.eventPlainChannel
+}
+
+func (c *Conn) EventXmlChannel() chan *RawResponse {
+	return c.channels.eventXmlChannel
+}
+
+func (c *Conn) EventJsonChannel() chan *RawResponse {
+	return c.channels.eventJsonChannel
+}
+
+func (c *Conn) AuthRequestChannel() chan *RawResponse {
+	return c.channels.authRequestChannel
+}
+
+func (c *Conn) DisconnectChannel() chan *RawResponse {
+	return c.channels.disconnectChannel
 }
 
 func (c *Channels) ByType(channelType string) chan *RawResponse {
@@ -222,8 +250,8 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 		return nil, err
 	}
 
-	replyChannel := c.channels.ReplyChannel()
-	responseChannel := c.channels.ApiResponseChannel()
+	replyChannel := c.ReplyChannel()
+	responseChannel := c.ApiResponseChannel()
 
 	// Get response
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] locking mutex and waiting for response", c.connectionId, commandId)
@@ -335,10 +363,10 @@ func (c *Conn) eventLoop() {
 	}(c.logger)
 
 	c.logger.Debug().Msgf("[ID: %s][action_id: event_loop] starting event loop", c.connectionId)
-	plainEventChannel := c.channels.EventPlainChannel()
-	xmlEventChannel := c.channels.EventXmlChannel()
-	jsonEventChannel := c.channels.EventJsonChannel()
-	disconnectChannel := c.channels.DisconnectChannel()
+	plainEventChannel := c.EventPlainChannel()
+	xmlEventChannel := c.EventXmlChannel()
+	jsonEventChannel := c.EventJsonChannel()
+	disconnectChannel := c.DisconnectChannel()
 
 	for {
 		var event *Event

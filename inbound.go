@@ -28,7 +28,7 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func(str
 		return nil, err
 	}
 	connection := NewConnection(c, false, logger, uuid.New().String(), onDisconnect)
-	authChannel := connection.channels.AuthRequestChannel()
+	authChannel := connection.AuthRequestChannel()
 	// First auth
 	<-authChannel
 	err = connection.doAuth(connection.runningContext, command.Auth{Password: password})
@@ -63,7 +63,7 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func(str
 //}
 
 func (c *Conn) authLoop(auth command.Auth) {
-	authChannel := c.channels.AuthRequestChannel()
+	authChannel := c.AuthRequestChannel()
 	for {
 		select {
 		case <-authChannel:
