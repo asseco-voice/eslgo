@@ -18,7 +18,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/AkronimBlack/eslgo"
+	"github.com/asseco-voice/eslgo"
 )
 
 func main() {

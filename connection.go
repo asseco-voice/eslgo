@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AkronimBlack/eslgo/command"
+	"github.com/asseco-voice/eslgo/command"
 	"github.com/google/uuid"
 )
 

@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/AkronimBlack/eslgo"
+	"github.com/asseco-voice/eslgo"
 )
 
 func main() {

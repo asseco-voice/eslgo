@@ -17,8 +17,8 @@ import (
 	"io"
 	"log"
 
-	"github.com/AkronimBlack/eslgo/command"
-	"github.com/AkronimBlack/eslgo/command/call"
+	"github.com/asseco-voice/eslgo/command"
+	"github.com/asseco-voice/eslgo/command/call"
 )
 
 func (c *Conn) EnableEvents(ctx context.Context) error {

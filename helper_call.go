@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/AkronimBlack/eslgo/command"
-	"github.com/AkronimBlack/eslgo/command/call"
+	"github.com/asseco-voice/eslgo/command"
+	"github.com/asseco-voice/eslgo/command/call"
 )
 
 // Leg This struct is used to specify the individual legs of a call for the originate helpers

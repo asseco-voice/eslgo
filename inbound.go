@@ -19,7 +19,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/AkronimBlack/eslgo/command"
+	"github.com/asseco-voice/eslgo/command"
 )
 
 func Dial(address, password string, timeout time.Duration, onDisconnect func(string), logger zerolog.Logger) (*Conn, error) {

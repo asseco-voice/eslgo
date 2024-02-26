@@ -16,7 +16,7 @@ import (
 	"github.com/rs/zerolog"
 	"time"
 
-	"github.com/AkronimBlack/eslgo"
+	"github.com/asseco-voice/eslgo"
 )
 
 func main() {

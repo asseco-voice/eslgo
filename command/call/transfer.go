@@ -13,7 +13,7 @@ package call
 import (
 	"net/textproto"
 
-	"github.com/AkronimBlack/eslgo/command"
+	"github.com/asseco-voice/eslgo/command"
 )
 
 // Documentation is sparse on this, but it looks like it transfers a call to an application?
