@@ -199,7 +199,9 @@ func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger, connectionI
 		eventListenerLock: sync.RWMutex{},
 	}
 	go instance.receiveLoop()
-	go instance.eventLoop()
+	for i := 0; i < 10; i++ {
+		go instance.eventLoop()
+	}
 	go instance.contextLoop()
 	return instance
 }
@@ -457,8 +459,8 @@ func (c *Conn) receiveLoop() {
 		}
 
 		// We have a handler
-		// Only allow 5 seconds to allow the handler to receive hte message on the channel
-		ctx, cancel := context.WithTimeout(c.runningContext, 2*time.Second)
+		// Only allow 1 seconds to allow the handler to receive the message on the channel
+		ctx, cancel := context.WithTimeout(c.runningContext, 1*time.Second)
 		defer cancel()
 
 		select {
@@ -468,7 +470,7 @@ func (c *Conn) receiveLoop() {
 			// Parent connection context has stopped we most likely shutdown in the middle of waiting for a handler to handle the message
 			return
 		case <-ctx.Done():
-			// Do not return an error since this is not fatal but log since it could be a indication of problems
+			// Do not return an error since this is not fatal but log since it could be an indication of problems
 			c.logger.Warn().Msgf("[ID: %s][action_id: %s] no one to handle response. Is the connection overloaded or stopping?\n%v", c.connectionId, loopId, response)
 		}
 	}
