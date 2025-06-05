@@ -210,7 +210,7 @@ func (c *Conn) RegisterEventListener(channelUUID string, listener EventListener)
 	defer c.eventListenerLock.Unlock()
 
 	id := uuid.New().String()
-	c.logger.Debug().Msgf("registering listener for %s with id ", channelUUID, id)
+	c.logger.Debug().Msgf("registering listener for channelUUID (%s) with id (%s)", channelUUID, id)
 	if _, ok := c.eventListeners[channelUUID]; ok {
 		c.eventListeners[channelUUID][id] = listener
 	} else {
