@@ -77,7 +77,7 @@ func (c *Conn) authLoop(auth command.Auth) {
 				c.logger.Debug().Msgf("successfully authenticated %s\n", c.conn.RemoteAddr())
 			}
 		case <-c.runningContext.Done():
-			c.logger.Warn().Err(c.runningContext.Err()).Msgf("context done in auth loop")
+			c.logger.Warn().Msgf("context done in auth loop - (%s)", c.runningContext.Err())
 			return
 		}
 	}
