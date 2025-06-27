@@ -232,6 +232,9 @@ func (c *Conn) RemoveEventListener(channelUUID string, id string) {
 
 func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawResponse, error) {
 	commandId := uuid.New().String()
+	if c == nil {
+		return nil, fmt.Errorf("connection is closed - skip sending command (%s)", command.BuildMessage())
+	}
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] sending command %s", c.connectionId, commandId, command.BuildMessage())
 	if c.disconnected {
 		c.logger.Debug().Msgf("[ID: %s][action_id: %s] connection disconnected, skipping command %s", c.connectionId, commandId, command.BuildMessage())
