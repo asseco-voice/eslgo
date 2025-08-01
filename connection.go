@@ -430,10 +430,14 @@ func (c *Conn) contextLoop() {
 	if c.FinishedChannel() != nil {
 		c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] finished channel is not null, sending event", c.connectionId)
 		c.FinishedChannel() <- true
+	} else {
+		c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] finished channel is null  - not sending event", c.connectionId)
 	}
 	if c.onDisconnect != nil {
-		c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] on disconnect is not null, calling", c.connectionId)
+		c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] on disconnect is not null, calling function onDisconnect", c.connectionId)
 		c.onDisconnect(c.connectionId)
+	} else {
+		c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] on disconnect is null, not calling function onDisconnect", c.connectionId)
 	}
 	c.logger.Debug().Msgf("[ID: %s][action_id: context_loop] context loop finished", c.connectionId)
 }
