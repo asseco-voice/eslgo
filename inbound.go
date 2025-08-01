@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
-	"log"
 	"net"
 	"time"
 
@@ -34,10 +33,10 @@ func Dial(address, password string, timeout time.Duration, onDisconnect func(str
 	err = connection.doAuth(connection.runningContext, command.Auth{Password: password})
 	if err != nil {
 		// Try to gracefully disconnect, we have the wrong password.
-		connection.ExitAndClose()
+		go connection.ExitAndClose()
 		return nil, err
 	} else {
-		log.Printf("Sucessfully authenticated %s\n", connection.conn.RemoteAddr())
+		logger.Printf("Sucessfully authenticated %s\n", connection.conn.RemoteAddr())
 	}
 
 	// Inbound only handlers
