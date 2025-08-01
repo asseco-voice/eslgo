@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"net"
 	"net/textproto"
 	"runtime/debug"
@@ -287,6 +286,11 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 }
 
 func (c *Conn) ExitAndClose() {
+	defer func() {
+		if r := recover(); r != nil {
+			c.logger.Printf("Unhandled panic: %v\nStack trace:\n%s", r, debug.Stack())
+		}
+	}()
 	c.logger.Debug().Msgf("[ID: %s] ExitAndClose", c.connectionId)
 	c.closeOnce.Do(func() {
 		// Attempt a graceful closing of the connection with FreeSWITCH
@@ -459,7 +463,7 @@ func (c *Conn) receiveLoop() {
 		}
 		responseChan := c.channels.ByType(response.GetHeader("Content-Type"))
 		if responseChan == nil {
-			log.Warn().Msgf("[ID: %s][action_id: %s] no channel has been found for %s", c.connectionId, loopId, response.GetHeader("Content-Type"))
+			c.logger.Warn().Msgf("[ID: %s][action_id: %s] no channel has been found for %s", c.connectionId, loopId, response.GetHeader("Content-Type"))
 			continue
 		}
 
