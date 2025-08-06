@@ -73,6 +73,15 @@ func (c *Channels) DisconnectChannel() chan *RawResponse {
 	return c.disconnectChannel
 }
 
+func (c *Channels) IsClosed(channel <-chan *RawResponse) bool {
+	select {
+	case _, ok := <-channel:
+		return !ok
+	default:
+		return false // Channel is not closed
+	}
+}
+
 /*Conn ...*/
 type Conn struct {
 	conn           net.Conn
@@ -471,6 +480,12 @@ func (c *Conn) receiveLoop() {
 		// Only allow 5 seconds to allow the handler to receive hte message on the channel
 		ctx, cancel := context.WithTimeout(c.runningContext, 2*time.Second)
 		defer cancel()
+
+		// Check if the channel is closed
+		if c.channels.IsClosed(responseChan) {
+			c.logger.Warn().Msgf("[ID: %s][action_id: %s] channel is closed for %s", c.connectionId, loopId, response.GetHeader("Content-Type"))
+			continue
+		}
 
 		select {
 		case responseChan <- response:
