@@ -1,9 +1,12 @@
 package eslgo
 
 import (
+	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -75,6 +78,63 @@ func TestSendCommandReturnsWhenConnectionDies(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("a dead connection must release senders waiting for a reply")
+	}
+}
+
+// Concurrent senders must still be serialised one command at a time, and every one
+// of them must get a reply. Exercises the write lock under load - run with -race.
+func TestSendCommandSerialisesConcurrentSenders(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	connection := NewConnection(client, false, zerolog.Nop(), "test-concurrent-senders", nil)
+	defer connection.Close()
+
+	const senders = 25
+
+	// Stand-in for FreeSWITCH: one reply per command read off the socket.
+	go func() {
+		reader := bufio.NewReader(server)
+		for i := 0; i < senders; i++ {
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					return
+				}
+				if line == "\r\n" || line == "\n" {
+					break // end of this command
+				}
+			}
+			if _, err := server.Write([]byte("Content-Type: command/reply\r\nReply-Text: +OK\r\n\r\n")); err != nil {
+				return
+			}
+		}
+	}()
+
+	var wait sync.WaitGroup
+	failures := make(chan error, senders)
+	for i := 0; i < senders; i++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			response, err := connection.SendCommand(ctx, command.API{Command: "status"})
+			if err != nil {
+				failures <- err
+				return
+			}
+			if !response.IsOk() {
+				failures <- fmt.Errorf("unexpected reply: %s", response.GetReply())
+			}
+		}()
+	}
+	wait.Wait()
+	close(failures)
+
+	for err := range failures {
+		t.Fatalf("a concurrent sender did not get its reply: %v", err)
 	}
 }
 
