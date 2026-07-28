@@ -81,6 +81,56 @@ func TestSendCommandReturnsWhenConnectionDies(t *testing.T) {
 	}
 }
 
+// serveReplies answers every command read off the socket with a bare +OK, standing
+// in for FreeSWITCH. Stops when the socket dies or count replies have been sent;
+// count <= 0 serves until then.
+func serveReplies(conn net.Conn, count int) {
+	reader := bufio.NewReader(conn)
+	for sent := 0; count <= 0 || sent < count; sent++ {
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if line == "\r\n" || line == "\n" {
+				break // end of this command
+			}
+		}
+		if _, err := conn.Write([]byte("Content-Type: command/reply\r\nReply-Text: +OK\r\n\r\n")); err != nil {
+			return
+		}
+	}
+}
+
+// A write deadline belongs to the socket, not to the command that set it, and it is
+// absolute. A bounded command must therefore not leave its expired deadline behind
+// for the next caller: on a long-lived connection the two mix freely - probes and
+// registration lookups are bounded, while leg commands are not - and a stale
+// deadline fails every later deadline-free write instantly with i/o timeout.
+func TestSendCommandClearsDeadlineForUnboundedCallers(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	connection := NewConnection(client, false, zerolog.Nop(), "test-deadline-residue", nil)
+	defer connection.Close()
+
+	go serveReplies(server, 2)
+
+	bounded, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := connection.SendCommand(bounded, command.API{Command: "status"}); err != nil {
+		t.Fatalf("the bounded command should have been answered well inside its deadline: %v", err)
+	}
+
+	// Let the deadline the first command installed fall into the past.
+	time.Sleep(200 * time.Millisecond)
+
+	if _, err := connection.SendCommand(context.Background(), command.API{Command: "status"}); err != nil {
+		t.Fatalf("a command with no deadline must not inherit the previous command's expired one: %v", err)
+	}
+}
+
 // Concurrent senders must still be serialised one command at a time, and every one
 // of them must get a reply. Exercises the write lock under load - run with -race.
 func TestSendCommandSerialisesConcurrentSenders(t *testing.T) {

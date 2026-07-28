@@ -285,8 +285,15 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 		return nil, ctx.Err()
 	}
 
+	// The write deadline is a property of the shared socket, not of this call, and it
+	// is absolute: left in place it outlives the command that set it and, once past,
+	// makes the next deadline-free write fail instantly with i/o timeout. Long-lived
+	// connections mix bounded and unbounded callers, so each command must state the
+	// deadline in full - including clearing it when it has none.
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = c.conn.SetWriteDeadline(deadline)
+	} else {
+		_ = c.conn.SetWriteDeadline(time.Time{})
 	}
 	c.logger.Debug().Msgf("[ID: %s][action_id: %s] writing to socket", c.connectionId, commandId)
 	_, err := c.conn.Write([]byte(command.BuildMessage() + EndOfMessage))
