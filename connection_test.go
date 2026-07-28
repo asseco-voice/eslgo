@@ -19,12 +19,13 @@ import (
 	"time"
 
 	"github.com/asseco-voice/eslgo/command"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestConn_SendCommand(t *testing.T) {
 	server, client := net.Pipe()
-	connection := NewConnection(client, false)
+	connection := NewConnection(client, false, zerolog.Nop(), "test-send-command", nil)
 	defer connection.Close()
 	defer server.Close()
 	defer client.Close()

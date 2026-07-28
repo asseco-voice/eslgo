@@ -84,10 +84,14 @@ func (c *Channels) IsClosed(channel <-chan *RawResponse) bool {
 
 /*Conn ...*/
 type Conn struct {
-	conn           net.Conn
-	reader         *bufio.Reader
-	header         *textproto.Reader
-	writeLock      sync.Mutex
+	conn   net.Conn
+	reader *bufio.Reader
+	header *textproto.Reader
+	// writeLock serialises command/reply pairs on this connection. It is a channel
+	// rather than a sync.Mutex so that waiting for it can honour the caller's
+	// context: a sender must never be stuck behind another sender for longer than
+	// its own deadline allows.
+	writeLock      chan struct{}
 	runningContext context.Context
 	stopFunc       func()
 
@@ -176,9 +180,26 @@ func (c *Conn) RunningContext() context.Context {
 
 const EndOfMessage = "\r\n\r\n"
 
+// keepAlivePeriod is how often the OS probes an otherwise idle ESL socket. Short
+// enough that a dead peer is noticed in well under a minute, long enough to be
+// invisible on a healthy connection.
+const keepAlivePeriod = 15 * time.Second
+
 func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger, connectionId string, onDisconnect func(string)) *Conn {
 	reader := bufio.NewReader(c)
 	header := textproto.NewReader(reader)
+
+	// An ESL connection can sit idle for a long time, so nothing in the protocol
+	// reveals a peer that vanished without a FIN/RST - a wedged FreeSWITCH, a
+	// killed container, a firewall dropping an idle flow. Keepalive is what turns
+	// that half-open socket into the read error that tears the connection down.
+	if tcpConn, ok := c.(*net.TCPConn); ok {
+		if err := tcpConn.SetKeepAlive(true); err != nil {
+			logger.Warn().Err(err).Msgf("[ID: %s] failed enabling TCP keepalive", connectionId)
+		} else if err := tcpConn.SetKeepAlivePeriod(keepAlivePeriod); err != nil {
+			logger.Warn().Err(err).Msgf("[ID: %s] failed setting TCP keepalive period", connectionId)
+		}
+	}
 
 	runningContext, stop := context.WithCancel(context.Background())
 
@@ -202,7 +223,7 @@ func NewConnection(c net.Conn, outbound bool, logger zerolog.Logger, connectionI
 		logger:            logger,
 		connectionId:      connectionId,
 		onDisconnect:      onDisconnect,
-		writeLock:         sync.Mutex{},
+		writeLock:         make(chan struct{}, 1),
 		responseChanMutex: sync.RWMutex{},
 		eventListenerLock: sync.RWMutex{},
 	}
@@ -248,8 +269,21 @@ func (c *Conn) SendCommand(ctx context.Context, command command.Command) (*RawRe
 		c.logger.Debug().Msgf("[ID: %s][action_id: %s] connection disconnected, skipping command %s", c.connectionId, commandId, command.BuildMessage())
 		return nil, fmt.Errorf("connection closed")
 	}
-	c.writeLock.Lock()
-	defer c.writeLock.Unlock()
+	// Only one command may be in flight per connection: the reply channels carry no
+	// correlation id, so releasing this before the reply arrives would hand one
+	// sender's reply to another. Waiting for it must still be interruptible,
+	// otherwise a single slow or stuck command silently wedges every other sender
+	// on the connection regardless of the deadlines they were given.
+	select {
+	case c.writeLock <- struct{}{}:
+		defer func() { <-c.writeLock }()
+	case <-c.runningContext.Done():
+		c.logger.Debug().Msgf("[ID: %s][action_id: %s] connection context is done while waiting to send", c.connectionId, commandId)
+		return nil, c.runningContext.Err()
+	case <-ctx.Done():
+		c.logger.Error().Err(ctx.Err()).Msgf("[ID: %s][action_id: %s] context done while waiting to send", c.connectionId, commandId)
+		return nil, ctx.Err()
+	}
 
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = c.conn.SetWriteDeadline(deadline)
@@ -468,6 +502,17 @@ func (c *Conn) receiveLoop() {
 	for c.runningContext.Err() == nil {
 		response, err := c.readResponse()
 		if err != nil {
+			// Nothing will ever be read from this socket again, so the connection is
+			// finished whether or not FreeSWITCH told us so. Returning without tearing
+			// it down leaves it looking alive while it silently swallows every event
+			// and every command reply - senders then block forever waiting for a
+			// response that no one is left to deliver, and no disconnect is reported.
+			// Close cancels the running context, which releases those senders and lets
+			// contextLoop fire the disconnect callback so the owner can reconnect.
+			if c.runningContext.Err() == nil {
+				c.logger.Error().Err(err).Msgf("[ID: %s][action_id: %s] receive loop failed to read, closing connection", c.connectionId, loopId)
+			}
+			c.Close()
 			return
 		}
 		responseChan := c.channels.ByType(response.GetHeader("Content-Type"))

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,7 +23,7 @@ const TestEventToSend = "Content-Length: 483\r\nContent-Type: text/event-plain\r
 
 func TestEvent_readPlainEvent(t *testing.T) {
 	server, client := net.Pipe()
-	connection := NewConnection(client, false)
+	connection := NewConnection(client, false, zerolog.Nop(), "test-read-plain-event", nil)
 	defer connection.Close()
 	defer server.Close()
 	defer client.Close()
