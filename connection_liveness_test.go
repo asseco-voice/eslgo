@@ -2,10 +2,12 @@ package eslgo
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,6 +47,65 @@ func TestReceiveLoopClosesConnectionOnReadError(t *testing.T) {
 
 	if connection.runningContext.Err() == nil {
 		t.Fatal("the running context must be cancelled once the socket is dead")
+	}
+}
+
+// syncBuffer collects a connection's log output. A Conn logs from all of its
+// goroutines - receive loop, event loop, context loop, auth loop - so the plain
+// bytes.Buffer this replaced was itself a data race, reported under -race even
+// though the library was clean.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+// A per-call connection ends when FreeSWITCH closes the socket after the call
+// hangs up - twice per call, on every call. Logging that as an error buries the
+// real ones: at production call volumes it is hundreds of ERROR lines an hour on
+// a perfectly healthy system, which is enough to trip error-rate alerting. The
+// teardown itself must still happen; only the severity differs.
+func TestReceiveLoopLogsCleanPeerCloseBelowError(t *testing.T) {
+	logged := &syncBuffer{}
+	logger := zerolog.New(logged)
+
+	server, client := net.Pipe()
+	defer client.Close()
+
+	disconnected := make(chan string, 1)
+	connection := NewConnection(client, false, logger, "test-clean-close", func(id string) {
+		disconnected <- id
+	})
+	defer connection.Close()
+
+	// A plain Close on the far end is an ordinary FIN: the reader sees io.EOF.
+	if err := server.Close(); err != nil {
+		t.Fatalf("failed closing the server end of the pipe: %v", err)
+	}
+
+	select {
+	case <-disconnected:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a closed socket must still tear the connection down")
+	}
+
+	out := logged.String()
+	if strings.Contains(out, `"level":"error"`) {
+		t.Fatalf("a clean peer close must not be logged at error level:\n%s", out)
+	}
+	if !strings.Contains(out, "peer closed the connection") {
+		t.Fatalf("expected the clean-close teardown to be logged, got:\n%s", out)
 	}
 }
 

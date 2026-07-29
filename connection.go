@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/rs/zerolog"
+	"io"
 	"net"
 	"net/textproto"
 	"runtime/debug"
@@ -516,8 +517,19 @@ func (c *Conn) receiveLoop() {
 			// response that no one is left to deliver, and no disconnect is reported.
 			// Close cancels the running context, which releases those senders and lets
 			// contextLoop fire the disconnect callback so the owner can reconnect.
+			//
+			// Severity distinguishes the two ways a socket ends. An EOF is FreeSWITCH
+			// closing it cleanly, which for a per-call connection is simply the call
+			// hanging up - ordinary, and twice per call, so logging it as an error
+			// buries the real ones. Anything else (a reset, a timeout) is unexpected
+			// and worth an error: that is the shape of the incident this teardown was
+			// added for.
 			if c.runningContext.Err() == nil {
-				c.logger.Error().Err(err).Msgf("[ID: %s][action_id: %s] receive loop failed to read, closing connection", c.connectionId, loopId)
+				if errors.Is(err, io.EOF) {
+					c.logger.Debug().Msgf("[ID: %s][action_id: %s] peer closed the connection, closing", c.connectionId, loopId)
+				} else {
+					c.logger.Error().Err(err).Msgf("[ID: %s][action_id: %s] receive loop failed to read, closing connection", c.connectionId, loopId)
+				}
 			}
 			c.Close()
 			return
